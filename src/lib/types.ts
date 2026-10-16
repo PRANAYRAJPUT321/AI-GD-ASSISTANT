@@ -133,6 +133,8 @@ export interface EngineState {
   userTurnSecondsLeft: number | null;
   /** 0..1 microphone level while the candidate holds the floor (for the live meter). */
   micLevel: number;
+  /** Input mode in effect: the configured one, or "text" after a microphone failure. */
+  inputMode: InputMode;
   /** Non-fatal notice for the UI (e.g. "Couldn't reach the AI; retrying"). */
   notice: string | null;
   /** Fatal error (status === "error"). */
