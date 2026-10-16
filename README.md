@@ -62,7 +62,7 @@ Open <http://localhost:3000>.
 |---|---|
 | `npm run dev` | Development server |
 | `npm run build && npm start` | Production build and server |
-| `npm test` | Unit tests (director, engine, metrics, speech helpers, server helpers) |
+| `npm test` | Unit tests in `tests/` (director, engine, metrics, speech helpers, server helpers, room view model, transcript text) |
 | `npm run typecheck` | TypeScript check |
 | `npm run lint` | ESLint |
 
@@ -96,7 +96,7 @@ Without Upstash/KV, the limits are counted in memory per server instance. That's
 
 The main running cost is Claude API usage. One 12-minute GD makes roughly 25–35 participant calls, each short with low effort, plus one scoring call.
 
-- **Rough estimate on Claude Opus 5.5 ($4 / $20 per million input / output tokens): about $0.30–0.50 per GD.** The participants' transcript is prompt-cached, so each call mostly re-reads cached tokens at a tenth of the price.
+- **Rough estimate on Claude Opus 5.5 ($4 / $20 per million input / output tokens): about $0.30–0.50 per GD.** The participants' transcript is prompt-cached, so each call mostly re-reads cached tokens at a twentieth of the input price ($0.20 per million).
 - This is an estimate. Check real usage in the Claude Console after a few GDs.
 - To cut the cost, set `GD_MODEL` to a cheaper model (for example `claude-sonnet-5-5` at $2 / $10, or `claude-haiku-5-5` at $0.10 / $0.50). The participants are the bulk of the calls, and scoring can stay on Opus.
 

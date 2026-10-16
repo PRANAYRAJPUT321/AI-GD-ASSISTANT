@@ -94,9 +94,11 @@ export function errorResponse(err: unknown, route: string, clientSignal?: AbortS
     return jsonError(504, "The AI took too long to respond. Try again.", "timeout");
   }
   if (err instanceof Anthropic.APIError) {
-    // Log status and request id only, and never echo the upstream message to the client.
+    // Log the API's error type, status and request id only, and never echo the upstream
+    // message to the client. (Not the class name: production builds minify it.)
+    const kind = err.type ?? (err instanceof Anthropic.APIConnectionError ? "connection_error" : "unknown_error");
     console.error(
-      `[gd-arena] ${route}: upstream ${err.constructor.name} status=${err.status ?? "none"} request_id=${err.requestID ?? "none"}`,
+      `[gd-arena] ${route}: upstream ${kind} status=${err.status ?? "none"} request_id=${err.requestID ?? "none"}`,
     );
     if (err instanceof Anthropic.RateLimitError || err.status === 529) {
       return jsonError(503, "The AI is busy right now. Try again in a moment.", "busy");
@@ -111,7 +113,7 @@ export function errorResponse(err: unknown, route: string, clientSignal?: AbortS
   }
   if (err instanceof Anthropic.AnthropicError) {
     // e.g. structured output that failed to parse.
-    console.error(`[gd-arena] ${route}: ${err.constructor.name}`);
+    console.error(`[gd-arena] ${route}: the SDK could not use the upstream response`);
     return jsonError(502, "The AI returned something unusable. Try again.", "upstream");
   }
   console.error(`[gd-arena] ${route}: unexpected error`, err);

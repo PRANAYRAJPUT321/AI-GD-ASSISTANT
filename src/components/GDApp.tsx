@@ -293,7 +293,9 @@ const STEPS: readonly { label: string; phases: readonly PhaseName[] }[] = [
 function AppHeader({ phase, remainingToday }: { phase: PhaseName; remainingToday: number | null }) {
   const current = STEPS.findIndex((step) => step.phases.includes(phase));
   return (
-    <header className="border-b border-line bg-panel/60">
+    // Hidden in print: the scorecard prints on its own (the active step pill's background is
+    // dropped on paper, which would leave its label invisible).
+    <header className="border-b border-line bg-panel/60 print:hidden">
       <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
         <div className="flex items-center gap-2.5">
           <LogoMark />
