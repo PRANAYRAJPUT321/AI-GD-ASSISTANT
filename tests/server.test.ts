@@ -749,6 +749,24 @@ describe("Claude calls (real SDK, stubbed API)", () => {
     assert.equal(((await res.json()) as { code: string }).code, "upstream");
   });
 
+  test("turn: an unfunded Claude account is 402 billing with a clear message", async () => {
+    reply = {
+      status: 400,
+      body: {
+        type: "error",
+        error: {
+          type: "invalid_request_error",
+          message: "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing.",
+        },
+      },
+    };
+    const res = await requestTurn(post("/api/turn", { token, ...input() }));
+    assert.equal(res.status, 402);
+    const body = (await res.json()) as { code: string; error: string };
+    assert.equal(body.code, "billing");
+    assert.match(body.error, /out of credits/);
+  });
+
   test("score: structured output is parsed, normalised and returned with metrics", async () => {
     captured.length = 0;
     const section = { rating: 6, comment: "You entered late but made a clear point." };
