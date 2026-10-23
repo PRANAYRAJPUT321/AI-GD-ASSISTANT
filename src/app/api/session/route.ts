@@ -3,7 +3,6 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import type { ApiError, SessionResponse } from "@/lib/types";
-import { assertAiConfigured } from "@/lib/server/ai";
 import { clientIp, errorResponse, requireJson } from "@/lib/server/http";
 import { consumeDailyGD } from "@/lib/server/limits";
 import {
@@ -19,8 +18,6 @@ export async function POST(request: NextRequest): Promise<Response> {
   const notJson = requireJson(request);
   if (notJson) return notJson;
   try {
-    // Fail before counting anything if the server cannot run a GD at all.
-    assertAiConfigured();
     const secret = sessionSecret();
 
     const device = deviceIdFrom(request.cookies.get(DEVICE_COOKIE)?.value);

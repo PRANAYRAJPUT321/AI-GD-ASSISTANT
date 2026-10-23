@@ -79,6 +79,7 @@ export function idleState(config: GDConfig): EngineState {
     userTurnSecondsLeft: null,
     micLevel: 0,
     inputMode: config.inputMode,
+    offline: false,
     notice: null,
     error: null,
   };

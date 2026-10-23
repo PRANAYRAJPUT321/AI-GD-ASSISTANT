@@ -144,6 +144,12 @@ export function ScorecardView({ card, onRestart }: { card: Scorecard; onRestart(
               <p className="text-xs text-ink-2">
                 Scored out of 100 across the eight areas below. Most practice GDs land between 45 and 65.
               </p>
+              {card.offline && (
+                <p className="rounded-lg bg-accent-soft px-3 py-2 text-xs text-ink">
+                  Practice mode: no AI evaluator was available, so this scorecard is built from your measured numbers
+                  and simple checks of what you said.
+                </p>
+              )}
             </div>
           </div>
         </Card>

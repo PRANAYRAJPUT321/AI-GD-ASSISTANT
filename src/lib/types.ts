@@ -135,6 +135,8 @@ export interface EngineState {
   micLevel: number;
   /** Input mode in effect: the configured one, or "text" after a microphone failure. */
   inputMode: InputMode;
+  /** The participant line being (or last) spoken is a built-in practice line (no AI service available). */
+  offline: boolean;
   /** Non-fatal notice for the UI (e.g. "Couldn't reach the AI; retrying"). */
   notice: string | null;
   /** Fatal error (status === "error"). */
@@ -194,4 +196,6 @@ export interface TurnRequest {
 export interface TurnResponse {
   /** The line to speak. null if the model declined or produced nothing usable. */
   text: string | null;
+  /** True when no AI service was available and this is a built-in practice line. */
+  offline?: boolean;
 }

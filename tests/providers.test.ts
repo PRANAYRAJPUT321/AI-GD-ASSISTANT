@@ -7,6 +7,7 @@ import { POST as requestScore } from "@/app/api/score/route";
 import { POST as startSession } from "@/app/api/session/route";
 import { POST as requestTurn } from "@/app/api/turn/route";
 import type { Assessment } from "@/lib/scoring";
+import { resetAiAvailability } from "@/lib/server/ai";
 import { ConfigError } from "@/lib/server/http";
 import { findProvider, requireProvider } from "@/lib/server/provider";
 import { createSessionToken } from "@/lib/server/session";
@@ -135,6 +136,7 @@ describe("chat provider routes (stubbed OpenAI-compatible API)", () => {
   });
   beforeEach(() => {
     captured.length = 0;
+    resetAiAvailability();
   });
   after(() => {
     server.close();
@@ -176,7 +178,7 @@ describe("chat provider routes (stubbed OpenAI-compatible API)", () => {
     assert.deepEqual(await (await requestTurn(post("/api/turn", turnBody(token)))).json(), { text: null });
   });
 
-  test("turn: one rate limit is retried; a second is 503 busy", async () => {
+  test("turn: one rate limit is retried; a second falls back to a practice line", async () => {
     replies = [
       { status: 429, headers: { "retry-after": "0" }, body: { error: { message: "Rate limit reached" } } },
       { status: 200, body: completion("Sorry, Priya, but the data says otherwise.") },
@@ -188,18 +190,22 @@ describe("chat provider routes (stubbed OpenAI-compatible API)", () => {
     captured.length = 0;
     replies = [{ status: 429, headers: { "retry-after": "0" }, body: { error: { message: "Rate limit reached" } } }];
     const busy = await requestTurn(post("/api/turn", turnBody(token)));
-    assert.equal(busy.status, 503);
-    assert.equal(((await busy.json()) as { code: string }).code, "busy");
+    assert.equal(busy.status, 200);
+    assert.equal(((await busy.json()) as { offline?: boolean }).offline, true);
     assert.equal(captured.length, 2, "exactly one retry");
   });
 
-  test("turn: a rejected key is a config error and leaks nothing", async () => {
+  test("turn: a rejected key falls back to practice lines, leaks nothing and pauses the AI", async () => {
     replies = [{ status: 401, body: { error: { message: "Invalid API Key gsk-test-stub" } } }];
     const res = await requestTurn(post("/api/turn", turnBody(token)));
-    assert.equal(res.status, 500);
+    assert.equal(res.status, 200);
     const text = await res.text();
-    assert.equal(JSON.parse(text).code, "config");
+    const body = JSON.parse(text) as { text: string; offline?: boolean };
+    assert.equal(body.offline, true);
+    assert.match(body.text, /Priya/, "the practice line uses the candidate's name");
     assert.doesNotMatch(text, /gsk-test-stub|Invalid API Key/);
+    await requestTurn(post("/api/turn", turnBody(token)));
+    assert.equal(captured.length, 1, "the rejected key isn't tried again straight away");
   });
 
   test("score: JSON (even in a code fence) is parsed, validated and normalised", async () => {
@@ -242,7 +248,7 @@ describe("chat provider routes (stubbed OpenAI-compatible API)", () => {
     assert.match(messages[1].content, /JSON Schema/);
   });
 
-  test("score: a reply that isn't a valid assessment is 502", async () => {
+  test("score: a reply that isn't a valid assessment falls back to a practice scorecard", async () => {
     replies = [{ status: 200, body: completion('{"overall": "great"}') }];
     const record = {
       config: { topic: TOPIC, userName: "Priya", minutes: 10, sttLang: "en-IN", inputMode: "voice" },
@@ -252,6 +258,7 @@ describe("chat provider routes (stubbed OpenAI-compatible API)", () => {
       discussionEndMs: 600_000,
     };
     const res = await requestScore(post("/api/score", { token, record }));
-    assert.equal(res.status, 502);
+    assert.equal(res.status, 200);
+    assert.equal(((await res.json()) as { offline?: boolean }).offline, true);
   });
 });

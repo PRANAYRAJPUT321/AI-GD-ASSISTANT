@@ -154,7 +154,7 @@ const ABANDONED = Symbol("abandoned");
 
 // ---------- Internal types ----------
 
-type LineResult = { ok: true; text: string } | LineFailure;
+type LineResult = { ok: true; text: string; offline: boolean } | LineFailure;
 interface LineFailure {
   ok: false;
   /** Set for errors that end the GD (bad token, exhausted limits). */
@@ -384,6 +384,8 @@ export class GDEngine {
   private notice: { text: string; untilMs: number } | null = null;
   private error: string | null = null;
   private mode: InputMode;
+  /** The line being (or last) spoken came from the server's practice mode (no AI available). */
+  private offline = false;
 
   // Discussion bookkeeping
   private timeUp = false;
@@ -573,6 +575,7 @@ export class GDEngine {
     const wait = this.lastSpeechEndMs + this.gapAfter(this.transcript.at(-1)) - this.elapsed();
     if (wait > 0 && (await this.waitFor(this.sleep(wait), () => this.lineInterrupted())) === ABANDONED) return;
 
+    this.offline = result.offline;
     await this.say(request.speaker, result.text, "discussion", "turn", request.cue);
   }
 
@@ -649,6 +652,7 @@ export class GDEngine {
       this.preparing = null;
       if (result === ABANDONED) return;
       if (result.ok) {
+        this.offline = result.offline;
         await this.say("smart", result.text, "summary", "summary");
         return;
       }
@@ -766,7 +770,9 @@ export class GDEngine {
       .then(
         (res): LineResult => {
           const text = typeof res?.text === "string" ? squash(res.text) : "";
-          return text ? { ok: true, text } : { ok: false, fatal: null, aborted: controller.signal.aborted };
+          return text
+            ? { ok: true, text, offline: res?.offline === true }
+            : { ok: false, fatal: null, aborted: controller.signal.aborted };
         },
         (err: unknown): LineResult => {
           const aborted = controller.signal.aborted;
@@ -1085,6 +1091,7 @@ export class GDEngine {
       if (result.fatal) this.fail(result.fatal);
       return;
     }
+    this.offline = result.offline;
     await this.talkOver(draft, result.text);
   }
 
@@ -1306,6 +1313,7 @@ export class GDEngine {
         draft && draft.phase === "summary" ? Math.max(0, Math.ceil((draft.deadlineMs - now) / 1000)) : null,
       micLevel: Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0,
       inputMode: this.mode,
+      offline: this.offline,
       notice: this.notice?.text ?? null,
       error: this.error,
     });
