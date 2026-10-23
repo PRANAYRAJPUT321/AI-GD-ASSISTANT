@@ -90,6 +90,13 @@ export function clientIp(headers: Headers): string {
   return ip.replace(/[^\w.:-]/g, "_").slice(0, 64);
 }
 
+/** The API's own error message (e.g. "Your credit balance is too low…"), else the SDK's message. */
+function upstreamMessage(err: InstanceType<typeof Anthropic.APIError>): string {
+  const body = err.error as { error?: { message?: unknown } } | undefined;
+  const inner = body?.error?.message;
+  return typeof inner === "string" ? inner : (err.message ?? "");
+}
+
 /**
  * Maps a thrown error to a response without leaking upstream details or secrets.
  * `clientSignal` is the incoming request's signal: an SDK abort caused by it means the
@@ -110,12 +117,22 @@ export function errorResponse(err: unknown, route: string, clientSignal?: AbortS
     return jsonError(504, "The AI took too long to respond. Try again.", "timeout");
   }
   if (err instanceof Anthropic.APIError) {
-    // Log the API's error type, status and request id only, and never echo the upstream
-    // message to the client. (Not the class name: production builds minify it.)
+    // Log the API's error type, status, request id and message server-side, but never echo
+    // the upstream message to the client. (Not the class name: production builds minify it.)
     const kind = err.type ?? (err instanceof Anthropic.APIConnectionError ? "connection_error" : "unknown_error");
+    const detail = upstreamMessage(err);
     console.error(
-      `[gd-arena] ${route}: upstream ${kind} status=${err.status ?? "none"} request_id=${err.requestID ?? "none"}`,
+      `[gd-arena] ${route}: upstream ${kind} status=${err.status ?? "none"} request_id=${err.requestID ?? "none"}` +
+        (detail ? ` message=${JSON.stringify(detail.slice(0, 300))}` : ""),
     );
+    if (err.status === 400 && /credit balance/i.test(detail)) {
+      // The API reports an unfunded account as a 400 invalid_request_error.
+      return jsonError(
+        402,
+        "GD Arena's Claude API account is out of credits. The site owner needs to add credits in the Claude Console (Billing).",
+        "billing",
+      );
+    }
     if (err instanceof Anthropic.RateLimitError || err.status === 529) {
       return jsonError(503, "The AI is busy right now. Try again in a moment.", "busy");
     }

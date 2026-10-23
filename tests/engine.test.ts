@@ -719,6 +719,15 @@ describe("GDEngine", () => {
     assert.match(failed.error ?? "", /no longer valid/);
     assert.equal(expired.server.calls.length, 1);
 
+    const unfunded = setup({
+      minutes: 0.1,
+      failure: () => new ApiCallError("GD Arena's Claude API account is out of credits.", 402, "billing"),
+    });
+    unfunded.engine.start();
+    const billing = await until(unfunded.engine, "the billing error", (s) => s.status === "error");
+    assert.match(billing.error ?? "", /out of credits/, "the server's explanation is shown");
+    assert.equal(unfunded.server.calls.length, 1, "no retries for a setup problem");
+
     let thrown = 0;
     const flaky = setup({ minutes: 0.1, failure: () => (++thrown === 1 ? "network down" : undefined) });
     flaky.engine.start();

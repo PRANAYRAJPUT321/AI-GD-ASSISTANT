@@ -30,7 +30,7 @@ const READY_BEAT_MS = 650;
 const TICK_MS = 250;
 
 /** Codes for which trying again cannot help (expired session, scoring cap, bad input, setup). */
-const FINAL_CODES: ReadonlySet<string> = new Set(["bad_token", "score_limit", "bad_request", "too_large", "config"]);
+const FINAL_CODES: ReadonlySet<string> = new Set(["bad_token", "score_limit", "bad_request", "too_large", "config", "billing"]);
 
 const GENERIC_ERROR = "Something went wrong while scoring your GD. Try again.";
 

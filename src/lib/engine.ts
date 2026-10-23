@@ -318,6 +318,9 @@ function fatalMessage(err: unknown): string | null {
   if (code === "bad_token" || status === 401 || status === 403) return MESSAGES.badToken;
   if (code === "turn_limit") return MESSAGES.turnLimit;
   if (code === "daily_limit") return MESSAGES.dailyLimit;
+  // Server setup problems (no API key, an unfunded Claude account) won't fix themselves on a
+  // retry; show the server's own explanation.
+  if (code === "config" || code === "billing") return errorText(err, MESSAGES.crashed);
   return null;
 }
 
