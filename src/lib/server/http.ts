@@ -92,7 +92,7 @@ export function clientIp(headers: Headers): string {
 }
 
 /** The API's own error message (e.g. "Your credit balance is too low…"), else the SDK's message. */
-function upstreamMessage(err: InstanceType<typeof Anthropic.APIError>): string {
+export function upstreamMessage(err: InstanceType<typeof Anthropic.APIError>): string {
   const body = err.error as { error?: { message?: unknown } } | undefined;
   const inner = body?.error?.message;
   return typeof inner === "string" ? inner : (err.message ?? "");

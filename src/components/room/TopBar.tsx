@@ -58,6 +58,14 @@ function PhaseBadge({ state }: { state: EngineState }) {
       </span>
       {live && <span className="text-ink">Live</span>}
       <span>{phaseLabel(state)}</span>
+      {state.offline && (
+        <span
+          className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] normal-case tracking-normal text-accent"
+          title="No AI service is available right now, so the participants are using built-in practice lines."
+        >
+          Practice mode
+        </span>
+      )}
     </p>
   );
 }

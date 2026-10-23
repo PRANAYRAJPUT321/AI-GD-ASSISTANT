@@ -98,6 +98,8 @@ Without Upstash/KV, the limits are counted in memory per server instance. That's
 
 ## Cost per GD and the free-vs-limited decision
 
+**Practice mode (no key, no cost):** with no AI key set, or when the AI can't be used (no credits, a rejected key, a free-tier limit), GD Arena still runs. The participants use built-in lines that quote your words and the topic, and the scorecard is built from the measured numbers. The room shows a "Practice mode" label and the scorecard says so. Real AI reactions need one of the keys below.
+
 **Running it for free:** set `GEMINI_API_KEY` (Google AI Studio) or `GROQ_API_KEY` (Groq console) instead of a Claude key. Both have free tiers with per-minute and per-day limits, so a free key supports a few GDs a day; when a limit is hit the participants pause briefly ("busy") and retry. Quality is below Claude's.
 
 The main running cost is Claude API usage. One 12-minute GD makes roughly 25–35 participant calls, each short with low effort, plus one scoring call.

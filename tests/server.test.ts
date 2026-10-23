@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import type { AddressInfo } from "node:net";
-import { after, before, describe, test } from "node:test";
+import { after, before, beforeEach, describe, test } from "node:test";
 import { NextRequest } from "next/server";
 import { POST as requestScore } from "@/app/api/score/route";
 import { POST as startSession } from "@/app/api/session/route";
 import { POST as requestTurn } from "@/app/api/turn/route";
 import type { Assessment, GDMetrics } from "@/lib/scoring";
+import { resetAiAvailability } from "@/lib/server/ai";
 import { assertApiKey, normaliseAssessment, scoringModel, turnEffort, turnModel } from "@/lib/server/claude";
 import { clientIp, ConfigError, readApiKey } from "@/lib/server/http";
 import { consumeDailyGD, consumeSessionCall, dayKey, readDailyLimits, TURN_CALLS_PER_SESSION } from "@/lib/server/limits";
@@ -71,13 +72,16 @@ describe("session tokens", () => {
     assert.notEqual(a, b);
   });
 
-  test("secret: SESSION_SECRET, else derived from the API key, else a config error", () => {
+  test("secret: SESSION_SECRET, else derived from the API key, else a per-project practice secret", () => {
     assert.deepEqual(sessionSecret({ SESSION_SECRET: "abc", ANTHROPIC_API_KEY: "k" }), Buffer.from("abc"));
     const derived = sessionSecret({ ANTHROPIC_API_KEY: "sk-test" });
     assert.equal(derived.length, 32);
     assert.deepEqual(sessionSecret({ ANTHROPIC_API_KEY: "sk-test" }), derived);
     assert.notDeepEqual(sessionSecret({ ANTHROPIC_API_KEY: "sk-other" }), derived);
-    assert.throws(() => sessionSecret({}), ConfigError);
+    const practice = sessionSecret({});
+    assert.equal(practice.length, 32);
+    assert.notDeepEqual(practice, derived, "adding an AI key changes the secret");
+    assert.notDeepEqual(sessionSecret({ VERCEL_PROJECT_ID: "prj_other" }), practice);
   });
 
   test("the API key is read from ANTHROPIC_API_KEY first, then pranay_api_key", () => {
@@ -617,12 +621,12 @@ describe("routes", () => {
     });
   });
 
-  test("session: missing API key is a config error and counts nothing", async (t) => {
+  test("session: with no AI key a GD still starts (practice mode)", async (t) => {
     t.after(() => setEnv(env));
     setEnv({ ANTHROPIC_API_KEY: undefined, SESSION_SECRET: undefined });
     const res = await startSession(post("/api/session", {}));
-    assert.equal(res.status, 500);
-    assert.equal(((await res.json()) as { code: string }).code, "config");
+    assert.equal(res.status, 200);
+    assert.ok(((await res.json()) as { token: string }).token);
   });
 
   test("session: non-JSON posts are refused", async () => {
@@ -687,6 +691,7 @@ describe("Claude calls (real SDK, stubbed API)", () => {
     delete process.env.GD_TURN_EFFORT;
     token = createSessionToken().token;
   });
+  beforeEach(() => resetAiAvailability());
   after(() => {
     server.close();
     for (const key of Object.keys(process.env)) if (!(key in env)) delete process.env[key];
@@ -726,30 +731,30 @@ describe("Claude calls (real SDK, stubbed API)", () => {
     assert.deepEqual(await (await requestTurn(post("/api/turn", { token, ...input() }))).json(), { text: null });
   });
 
-  test("turn: upstream rate limit is 503 busy and leaks nothing", async () => {
+  test("turn: an upstream rate limit falls back to a practice line and leaks nothing", async () => {
     reply = {
       status: 429,
       headers: { "x-should-retry": "false" },
       body: { type: "error", error: { type: "rate_limit_error", message: "secret upstream detail" } },
     };
     const res = await requestTurn(post("/api/turn", { token, ...input() }));
-    assert.equal(res.status, 503);
+    assert.equal(res.status, 200);
     const text = await res.text();
-    assert.equal(JSON.parse(text).code, "busy");
+    const body = JSON.parse(text) as { text: string; offline: boolean };
+    assert.equal(body.offline, true);
+    assert.ok(body.text.length > 20);
     assert.doesNotMatch(text, /secret upstream detail|sk-test/);
+
+    // A rate limit is transient: the next line tries the AI again.
+    captured.length = 0;
+    reply = { status: 200, body: message("Back to the data, Priya.") };
+    assert.deepEqual(await (await requestTurn(post("/api/turn", { token, ...input() }))).json(), {
+      text: "Back to the data, Priya.",
+    });
+    assert.equal(captured.length, 1);
   });
 
-  test("turn: other upstream errors are 502", async () => {
-    reply = {
-      status: 400,
-      body: { type: "error", error: { type: "invalid_request_error", message: "bad things" } },
-    };
-    const res = await requestTurn(post("/api/turn", { token, ...input() }));
-    assert.equal(res.status, 502);
-    assert.equal(((await res.json()) as { code: string }).code, "upstream");
-  });
-
-  test("turn: an unfunded Claude account is 402 billing with a clear message", async () => {
+  test("turn: an unfunded Claude account falls back to practice lines and pauses the AI", async () => {
     reply = {
       status: 400,
       body: {
@@ -760,11 +765,14 @@ describe("Claude calls (real SDK, stubbed API)", () => {
         },
       },
     };
-    const res = await requestTurn(post("/api/turn", { token, ...input() }));
-    assert.equal(res.status, 402);
-    const body = (await res.json()) as { code: string; error: string };
-    assert.equal(body.code, "billing");
-    assert.match(body.error, /out of credits/);
+    captured.length = 0;
+    const first = (await (await requestTurn(post("/api/turn", { token, ...input() }))).json()) as { offline?: boolean };
+    assert.equal(first.offline, true);
+    assert.equal(captured.length, 1);
+    // A problem that won't fix itself: the next lines skip the AI instead of waiting on it.
+    const second = (await (await requestTurn(post("/api/turn", { token, ...input() }))).json()) as { offline?: boolean };
+    assert.equal(second.offline, true);
+    assert.equal(captured.length, 1, "no second call to the unfunded account");
   });
 
   test("score: structured output is parsed, normalised and returned with metrics", async () => {
@@ -812,7 +820,7 @@ describe("Claude calls (real SDK, stubbed API)", () => {
     assert.equal("thinking" in body, false);
   });
 
-  test("score: a refusal is 502", async () => {
+  test("score: a refusal falls back to a practice scorecard", async () => {
     reply = { status: 200, body: message("", "refusal") };
     const record = {
       config: { topic: TOPIC, userName: "Priya", minutes: 10, sttLang: "en-IN", inputMode: "voice" },
@@ -822,6 +830,9 @@ describe("Claude calls (real SDK, stubbed API)", () => {
       discussionEndMs: 600_000,
     };
     const res = await requestScore(post("/api/score", { token, record }));
-    assert.equal(res.status, 502);
+    assert.equal(res.status, 200);
+    const out = (await res.json()) as { offline?: boolean; assessment: Assessment };
+    assert.equal(out.offline, true);
+    assert.equal(out.assessment.summary.rating, 0);
   });
 });

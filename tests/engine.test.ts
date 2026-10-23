@@ -111,7 +111,12 @@ interface ServerCall {
 }
 
 /** /api/turn stand-in: numbered lines after `delayMs`; honours the abort signal. */
-function fakeServer(voice: FakeVoice, delayMs: number, failure?: (req: TurnRequest) => unknown) {
+function fakeServer(
+  voice: FakeVoice,
+  delayMs: number,
+  failure?: (req: TurnRequest) => unknown,
+  offline?: (callId: number) => boolean,
+) {
   const calls: ServerCall[] = [];
   const requestTurn = (req: TurnRequest, signal?: AbortSignal) =>
     new Promise<TurnResponse>((resolve, reject) => {
@@ -127,7 +132,7 @@ function fakeServer(voice: FakeVoice, delayMs: number, failure?: (req: TurnReque
         call.settled = true;
         const error = failure?.(req);
         if (error !== undefined) reject(error);
-        else resolve({ text: lineFor(call) });
+        else resolve(offline?.(call.id) ? { text: lineFor(call), offline: true } : { text: lineFor(call) });
       }, delayMs);
       signal?.addEventListener("abort", onAbort, { once: true });
     });
@@ -192,6 +197,8 @@ interface Options {
   msPerChar?: number;
   delayMs?: number;
   failure?: (req: TurnRequest) => unknown;
+  /** Which server calls answer in practice mode. */
+  offline?: (callId: number) => boolean;
   listenerFails?: ListenerErrorKind;
 }
 
@@ -199,7 +206,7 @@ const engines: GDEngine[] = [];
 
 function setup(options: Options = {}) {
   const voice = new FakeVoice(options.msPerChar ?? 0.5);
-  const server = fakeServer(voice, options.delayMs ?? 5, options.failure);
+  const server = fakeServer(voice, options.delayMs ?? 5, options.failure, options.offline);
   const meter = new FakeMeter();
   const listeners: FakeListener[] = [];
   const config: GDConfig = {
@@ -738,5 +745,14 @@ describe("GDEngine", () => {
       ["data", "open"],
       "someone else opens after the dominator's line failed",
     );
+  });
+
+  test("practice-mode lines from the server are flagged in the state, and the flag follows the latest line", async () => {
+    const { engine } = setup({ minutes: 0.1, offline: (id) => id === 1 });
+    engine.start();
+    const practice = await until(engine, "a practice line", (s) => discussionAi(s).length >= 1);
+    assert.equal(practice.offline, true);
+    const live = await until(engine, "a live line after it", (s) => discussionAi(s).length >= 2 && !s.offline);
+    assert.equal(live.offline, false);
   });
 });

@@ -130,6 +130,8 @@ export interface ScoreRequest {
 export interface ScoreResponse {
   metrics: GDMetrics;
   assessment: Assessment;
+  /** True when no AI evaluator was available and the assessment comes from the metrics alone. */
+  offline?: boolean;
 }
 
 /** Everything the scorecard screen renders. */

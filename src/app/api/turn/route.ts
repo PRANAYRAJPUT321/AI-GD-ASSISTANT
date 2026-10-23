@@ -2,7 +2,7 @@
 
 import type { NextRequest } from "next/server";
 import type { TurnResponse } from "@/lib/types";
-import { assertAiConfigured, generateLine } from "@/lib/server/ai";
+import { lineOrPractice } from "@/lib/server/ai";
 import { errorResponse, jsonError, jsonOk } from "@/lib/server/http";
 import { consumeSessionCall } from "@/lib/server/limits";
 import { verifySessionToken } from "@/lib/server/session";
@@ -16,7 +16,6 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!parsed.ok) return parsed.response;
   const { token, ...input } = parsed.data;
   try {
-    assertAiConfigured();
     const claims = verifySessionToken(token);
     if (!claims) {
       return jsonError(401, "Your session has expired. Start a new GD.", "bad_token");
@@ -25,8 +24,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       return jsonError(429, "This GD has used all of its AI turns.", "turn_limit");
     }
     // request.signal: a dropped prefetch in the browser cancels the upstream call.
-    const text = await generateLine(input, request.signal);
-    return jsonOk<TurnResponse>({ text });
+    const { text, offline } = await lineOrPractice(input, request.signal);
+    return jsonOk<TurnResponse>(offline ? { text, offline } : { text });
   } catch (err) {
     return errorResponse(err, "/api/turn", request.signal);
   }
