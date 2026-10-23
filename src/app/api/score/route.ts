@@ -4,7 +4,7 @@
 import type { NextRequest } from "next/server";
 import { computeMetrics } from "@/lib/metrics";
 import type { ScoreResponse } from "@/lib/scoring";
-import { assertApiKey, assessGD } from "@/lib/server/claude";
+import { assertAiConfigured, assessGD } from "@/lib/server/ai";
 import { errorResponse, jsonError, jsonOk } from "@/lib/server/http";
 import { consumeSessionCall } from "@/lib/server/limits";
 import { verifySessionToken } from "@/lib/server/session";
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!parsed.ok) return parsed.response;
   const { token, record } = parsed.data;
   try {
-    assertApiKey();
+    assertAiConfigured();
     const claims = verifySessionToken(token);
     if (!claims) {
       return jsonError(401, "Your session has expired, so this GD can't be scored.", "bad_token");

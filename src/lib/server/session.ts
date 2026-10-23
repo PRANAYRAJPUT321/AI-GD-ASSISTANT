@@ -5,7 +5,8 @@
 // score calls. Stateless: verification needs only the secret.
 
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { ConfigError, readApiKey, type Env } from "./http";
+import { ConfigError, type Env } from "./http";
+import { anyProviderKey } from "./provider";
 
 export const TOKEN_TTL_MS = 45 * 60 * 1000;
 
@@ -27,15 +28,15 @@ export interface TokenOptions {
 }
 
 /**
- * HMAC key: SESSION_SECRET, else derived from the Anthropic API key so a deployment
- * with only ANTHROPIC_API_KEY set still gets a stable, private secret.
+ * HMAC key: SESSION_SECRET, else derived from the configured AI key so a deployment
+ * with only an AI key set still gets a stable, private secret.
  */
 export function sessionSecret(env: Env = process.env): Buffer {
   const explicit = env.SESSION_SECRET?.trim();
   if (explicit) return Buffer.from(explicit, "utf8");
-  const apiKey = readApiKey(env);
+  const apiKey = anyProviderKey(env);
   if (apiKey) return createHash("sha256").update(`gd-arena:${apiKey}`).digest();
-  throw new ConfigError("Set SESSION_SECRET or ANTHROPIC_API_KEY to sign session tokens.");
+  throw new ConfigError("Set SESSION_SECRET or an AI key (ANTHROPIC_API_KEY, GEMINI_API_KEY, GROQ_API_KEY) to sign session tokens.");
 }
 
 const sign = (payload: string, secret: Buffer) =>
