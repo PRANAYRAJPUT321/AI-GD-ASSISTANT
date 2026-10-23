@@ -1,17 +1,31 @@
 // GET /api/health: a quick deployment check that is safe to open in a browser.
-// Reports whether the server can see a Claude API key (and under which variable name)
-// and which commit is deployed. It never returns the key itself.
+// Reports which AI service the server will use (and its models) and which commit is
+// deployed. It never returns a key.
 
 import { connection } from "next/server";
-import { API_KEY_ENV_NAMES, jsonOk } from "@/lib/server/http";
+import { jsonOk } from "@/lib/server/http";
+import { findProvider, type Provider } from "@/lib/server/provider";
+import { scoringModel, turnModel } from "@/lib/server/claude";
+
+function describe(provider: Provider) {
+  return provider.id === "claude"
+    ? { provider: "claude", turnModel: turnModel(), scoringModel: scoringModel() }
+    : { provider: provider.id, turnModel: provider.turnModel, scoringModel: provider.scoringModel };
+}
 
 export async function GET(): Promise<Response> {
   // Read the environment at request time, not when the page is prerendered at build.
   await connection();
-  const keySource = API_KEY_ENV_NAMES.find((name) => process.env[name]?.trim()) ?? null;
+  let ai: Record<string, string> | string;
+  try {
+    const provider = findProvider();
+    ai = provider ? describe(provider) : "missing: add ANTHROPIC_API_KEY, GEMINI_API_KEY or GROQ_API_KEY in Vercel";
+  } catch (err) {
+    ai = `misconfigured: ${err instanceof Error ? err.message : "unknown"}`;
+  }
   return jsonOk({
-    ok: keySource !== null,
-    apiKey: keySource ? `set (${keySource})` : "missing: add ANTHROPIC_API_KEY in the Vercel project settings",
+    ok: typeof ai !== "string",
+    ai,
     commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null,
     environment: process.env.VERCEL_ENV ?? "local",
   });

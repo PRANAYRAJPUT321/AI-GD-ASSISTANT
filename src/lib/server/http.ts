@@ -4,6 +4,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { ApiError } from "../types";
+import { ChatHttpError, ChatTimeoutError } from "./chat";
 import { StoreError } from "./store";
 
 /** Environment variables (process.env, or a plain object in tests). */
@@ -148,6 +149,30 @@ export function errorResponse(err: unknown, route: string, clientSignal?: AbortS
     // e.g. structured output that failed to parse.
     console.error(`[gd-arena] ${route}: the SDK could not use the upstream response`);
     return jsonError(502, "The AI returned something unusable. Try again.", "upstream");
+  }
+  if (err instanceof ChatTimeoutError) {
+    console.error(`[gd-arena] ${route}: chat API hit the deadline`);
+    return jsonError(504, "The AI took too long to respond. Try again.", "timeout");
+  }
+  if (err instanceof ChatHttpError) {
+    console.error(`[gd-arena] ${route}: chat API status=${err.status} message=${JSON.stringify(err.detail.slice(0, 300))}`);
+    if (err.status === 429) {
+      return jsonError(503, "The AI is busy right now (free-tier limit). Try again in a moment.", "busy");
+    }
+    if (err.status === 401 || err.status === 403) {
+      return jsonError(500, "GD Arena isn't configured correctly on the server yet.", "config");
+    }
+    if (err.status === 402) {
+      return jsonError(
+        402,
+        "GD Arena's AI account needs billing set up. The site owner needs to check the AI provider's console.",
+        "billing",
+      );
+    }
+    return jsonError(502, "The AI service had a problem. Try again.", "upstream");
+  }
+  if (err instanceof DOMException && err.name === "AbortError" && clientSignal?.aborted) {
+    return jsonError(499, "Request cancelled.", "aborted");
   }
   console.error(`[gd-arena] ${route}: unexpected error`, err);
   return jsonError(500, "Something went wrong on the server.", "internal");

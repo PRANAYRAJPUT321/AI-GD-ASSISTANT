@@ -2,7 +2,7 @@
 
 import type { NextRequest } from "next/server";
 import type { TurnResponse } from "@/lib/types";
-import { assertApiKey, generateLine } from "@/lib/server/claude";
+import { assertAiConfigured, generateLine } from "@/lib/server/ai";
 import { errorResponse, jsonError, jsonOk } from "@/lib/server/http";
 import { consumeSessionCall } from "@/lib/server/limits";
 import { verifySessionToken } from "@/lib/server/session";
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!parsed.ok) return parsed.response;
   const { token, ...input } = parsed.data;
   try {
-    assertApiKey();
+    assertAiConfigured();
     const claims = verifySessionToken(token);
     if (!claims) {
       return jsonError(401, "Your session has expired. Start a new GD.", "bad_token");
