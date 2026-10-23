@@ -5,7 +5,7 @@
 // score calls. Stateless: verification needs only the secret.
 
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { ConfigError, type Env } from "./http";
+import { ConfigError, readApiKey, type Env } from "./http";
 
 export const TOKEN_TTL_MS = 45 * 60 * 1000;
 
@@ -33,7 +33,7 @@ export interface TokenOptions {
 export function sessionSecret(env: Env = process.env): Buffer {
   const explicit = env.SESSION_SECRET?.trim();
   if (explicit) return Buffer.from(explicit, "utf8");
-  const apiKey = env.ANTHROPIC_API_KEY?.trim();
+  const apiKey = readApiKey(env);
   if (apiKey) return createHash("sha256").update(`gd-arena:${apiKey}`).digest();
   throw new ConfigError("Set SESSION_SECRET or ANTHROPIC_API_KEY to sign session tokens.");
 }

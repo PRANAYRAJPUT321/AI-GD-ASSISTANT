@@ -7,8 +7,8 @@ import { POST as requestScore } from "@/app/api/score/route";
 import { POST as startSession } from "@/app/api/session/route";
 import { POST as requestTurn } from "@/app/api/turn/route";
 import type { Assessment, GDMetrics } from "@/lib/scoring";
-import { normaliseAssessment, scoringModel, turnEffort, turnModel } from "@/lib/server/claude";
-import { clientIp, ConfigError } from "@/lib/server/http";
+import { assertApiKey, normaliseAssessment, scoringModel, turnEffort, turnModel } from "@/lib/server/claude";
+import { clientIp, ConfigError, readApiKey } from "@/lib/server/http";
 import { consumeDailyGD, consumeSessionCall, dayKey, readDailyLimits, TURN_CALLS_PER_SESSION } from "@/lib/server/limits";
 import {
   buildScoringPrompt,
@@ -78,6 +78,15 @@ describe("session tokens", () => {
     assert.deepEqual(sessionSecret({ ANTHROPIC_API_KEY: "sk-test" }), derived);
     assert.notDeepEqual(sessionSecret({ ANTHROPIC_API_KEY: "sk-other" }), derived);
     assert.throws(() => sessionSecret({}), ConfigError);
+  });
+
+  test("the API key is read from ANTHROPIC_API_KEY first, then pranay_api_key", () => {
+    assert.equal(readApiKey({ ANTHROPIC_API_KEY: " sk-main ", pranay_api_key: "sk-alt" }), "sk-main");
+    assert.equal(readApiKey({ ANTHROPIC_API_KEY: "  ", pranay_api_key: "sk-alt" }), "sk-alt");
+    assert.equal(readApiKey({}), undefined);
+    assert.equal(assertApiKey({ pranay_api_key: "sk-alt" }), "sk-alt");
+    assert.throws(() => assertApiKey({}), ConfigError);
+    assert.deepEqual(sessionSecret({ pranay_api_key: "sk-test" }), sessionSecret({ ANTHROPIC_API_KEY: "sk-test" }));
   });
 });
 
