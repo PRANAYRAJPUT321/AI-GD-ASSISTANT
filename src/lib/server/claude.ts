@@ -10,7 +10,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { AssessmentSchema, type Assessment, type GDMetrics } from "../scoring";
 import type { GDRecord } from "../types";
-import { ConfigError, type Env } from "./http";
+import { ConfigError, readApiKey, type Env } from "./http";
 import { buildScoringPrompt, buildTurnPrompt, cleanLine, cleanLineOptions, type TurnPromptInput } from "./prompts";
 
 export const DEFAULT_MODEL = "claude-opus-5-5";
@@ -43,7 +43,7 @@ export function turnEffort(env: Env = process.env): Effort {
 
 /** Throws ConfigError when the API key is missing (checked at request time, not build time). */
 export function assertApiKey(env: Env = process.env): string {
-  const key = env.ANTHROPIC_API_KEY?.trim();
+  const key = readApiKey(env);
   if (!key) throw new ConfigError("ANTHROPIC_API_KEY is not set.");
   return key;
 }

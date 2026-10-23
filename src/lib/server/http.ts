@@ -9,6 +9,22 @@ import { StoreError } from "./store";
 /** Environment variables (process.env, or a plain object in tests). */
 export type Env = Readonly<Record<string, string | undefined>>;
 
+/**
+ * Environment variable names the Anthropic API key is read from, in order.
+ * ANTHROPIC_API_KEY is the documented name; `pranay_api_key` is the name the key was
+ * saved under in this project's Vercel settings (a Sensitive variable can't be renamed).
+ */
+export const API_KEY_ENV_NAMES = ["ANTHROPIC_API_KEY", "pranay_api_key"] as const;
+
+/** The Anthropic API key from the first non-empty name in API_KEY_ENV_NAMES, else undefined. */
+export function readApiKey(env: Env = process.env): string | undefined {
+  for (const name of API_KEY_ENV_NAMES) {
+    const value = env[name]?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
 /** The server is missing configuration it needs (API key, session secret). */
 export class ConfigError extends Error {
   constructor(message: string) {
