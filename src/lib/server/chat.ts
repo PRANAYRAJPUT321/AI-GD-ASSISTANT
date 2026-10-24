@@ -9,10 +9,16 @@ import { buildScoringPrompt, buildTurnPrompt, cleanLine, cleanLineOptions, type 
 import type { ChatProvider } from "./provider";
 
 /** Per-route budgets inside each route's maxDuration (30 s turn, 120 s score). */
-const TURN_DEADLINE_MS = 27_000;
+const DEFAULT_DEADLINES = { turnMs: 27_000, scoreMs: 112_000 } as const;
+let deadlines: { turnMs: number; scoreMs: number } = { ...DEFAULT_DEADLINES };
 const TURN_MAX_TOKENS = 4000; // some services count hidden reasoning against this
-const SCORE_DEADLINE_MS = 112_000;
-const SCORE_MAX_TOKENS = 16_000;
+// An assessment is about 2-3k tokens. The cap also ends a runaway reply (JSON mode can emit
+// whitespace until the limit) well inside the deadline.
+const SCORE_MAX_TOKENS = 8000;
+/** While other models remain, one model gets at most this share of the deadline. */
+const ATTEMPT_SHARE = 0.5;
+/** How long to pass over a model that was too slow to answer. */
+const SLOW_MODEL_SKIP_MS = 10 * 60 * 1000;
 /** A rate limit that clears within this long is waited out and retried once. */
 const RATE_LIMIT_RETRY_MS = 3_000;
 /** How long to pass over a model the service says doesn't exist or isn't available to this key. */
@@ -53,6 +59,8 @@ interface ChatRequest {
   maxTokens: number;
   extra: Readonly<Record<string, unknown>>;
   json?: boolean;
+  /** Whether a reply is usable; an unusable one hands over to the next model, if there is one. */
+  accept?: (result: Omit<ChatResult, "model">) => boolean;
 }
 
 interface ChatResult {
@@ -82,6 +90,11 @@ const plainModels = new Set<string>();
 export function resetChatModelState(): void {
   skipUntil.clear();
   plainModels.clear();
+}
+
+/** Test hook: shorten the deadlines (no argument restores the defaults). */
+export function setChatDeadlines(next: Partial<typeof deadlines> = {}): void {
+  deadlines = { ...DEFAULT_DEADLINES, ...next };
 }
 
 function errorDetail(body: string): string {
@@ -188,9 +201,11 @@ async function sendWithRetry(
 
 /**
  * Sends the request to the first usable model in `models`. A model the service says is
- * missing or out of quota is passed over for a while and the next one tried at once; a
+ * missing or out of quota, or one too slow to answer, is passed over for a while and the
+ * next one tried at once; a reply `req.accept` rejects also moves on to the next model. A
  * model that rejects the extra fields (an unsupported reasoning_effort) is retried without
- * them. The last model's error is thrown when none of them answer. One deadline covers all tries.
+ * them. One deadline covers all tries, and while other models remain, one model gets at most
+ * half of it. The last model's error (or reply) is what comes back when none of them do better.
  */
 async function complete(
   provider: ChatProvider,
@@ -200,7 +215,6 @@ async function complete(
   clientSignal?: AbortSignal,
 ): Promise<ChatResult> {
   const deadline = AbortSignal.timeout(deadlineMs);
-  const signal = clientSignal ? AbortSignal.any([clientSignal, deadline]) : deadline;
   const now = Date.now();
   const ready = models.filter((model) => (skipUntil.get(model) ?? 0) <= now);
   // When every model is being passed over, try them all anyway rather than fail without asking.
@@ -217,11 +231,27 @@ async function complete(
       ...extra,
       ...(req.json ? { response_format: { type: "json_object" } } : {}),
     });
+    const attemptDeadline = last
+      ? deadline
+      : AbortSignal.any([deadline, AbortSignal.timeout(Math.round(deadlineMs * ATTEMPT_SHARE))]);
+    const attemptSignal = clientSignal ? AbortSignal.any([clientSignal, attemptDeadline]) : attemptDeadline;
     try {
       // Only the last model waits out a short rate limit; the others hand over straight away.
-      const result = last ? await sendWithRetry(provider, body, signal, deadline) : await send(provider, body, signal, deadline);
-      return { ...result, model };
+      const result = last
+        ? await sendWithRetry(provider, body, attemptSignal, attemptDeadline)
+        : await send(provider, body, attemptSignal, attemptDeadline);
+      if (last || !req.accept || req.accept(result)) return { ...result, model };
+      console.warn(
+        `[gd-arena] chat: ${model} gave an unusable reply (finish_reason=${result.finishReason}); trying ${order[i + 1]}`,
+      );
+      i++;
     } catch (err) {
+      if (err instanceof ChatTimeoutError && !last && !deadline.aborted) {
+        skipUntil.set(model, Date.now() + SLOW_MODEL_SKIP_MS);
+        console.warn(`[gd-arena] chat: ${model} took too long; trying ${order[i + 1]}`);
+        i++;
+        continue;
+      }
       if (!(err instanceof ChatHttpError)) throw err;
       if (err.status === 400 && Object.keys(extra).length > 0 && /reasoning|thinking/i.test(err.detail)) {
         plainModels.add(model);
@@ -264,7 +294,7 @@ export async function generateLineViaChat(
       maxTokens: TURN_MAX_TOKENS,
       extra: provider.turnExtra,
     },
-    TURN_DEADLINE_MS,
+    deadlines.turnMs,
     signal,
   );
   // A line cut off by the token limit would end mid-sentence when spoken.
@@ -289,6 +319,11 @@ function extractJson(text: string): unknown {
   }
 }
 
+function parseAssessment(text: string): Assessment | null {
+  const parsed = AssessmentSchema.safeParse(extractJson(text));
+  return parsed.success ? parsed.data : null;
+}
+
 /** The structured assessment, or null when the reply wasn't a valid assessment. */
 export async function assessGDViaChat(
   provider: ChatProvider,
@@ -297,6 +332,7 @@ export async function assessGDViaChat(
   signal?: AbortSignal,
 ): Promise<Assessment | null> {
   const prompt = buildScoringPrompt(record, metrics);
+  const started = Date.now();
   const result = await complete(
     provider,
     provider.scoringModels,
@@ -313,12 +349,16 @@ export async function assessGDViaChat(
       maxTokens: SCORE_MAX_TOKENS,
       extra: provider.scoringExtra,
       json: true,
+      accept: (reply) => reply.finishReason !== "length" && parseAssessment(reply.text) !== null,
     },
-    SCORE_DEADLINE_MS,
+    deadlines.scoreMs,
     signal,
   );
-  const parsed = AssessmentSchema.safeParse(extractJson(result.text));
-  return parsed.success ? parsed.data : null;
+  const assessment = parseAssessment(result.text);
+  console.info(
+    `[gd-arena] chat: scored by ${result.model} in ${Date.now() - started} ms` + (assessment ? "" : " (unusable reply)"),
+  );
+  return assessment;
 }
 
 export interface ChatCheck {
@@ -367,7 +407,7 @@ async function runCheck(provider: ChatProvider): Promise<ChatCheck> {
         maxTokens: TURN_MAX_TOKENS,
         extra: provider.turnExtra,
       },
-      TURN_DEADLINE_MS,
+      deadlines.turnMs,
     );
     return { models, available, line: { ok: true, model: result.model, ms: Date.now() - started } };
   } catch (err) {

@@ -9,7 +9,7 @@ import { POST as requestTurn } from "@/app/api/turn/route";
 import type { Assessment } from "@/lib/scoring";
 import { GET as health } from "@/app/api/health/route";
 import { resetAiAvailability } from "@/lib/server/ai";
-import { resetChatCheck, resetChatModelState } from "@/lib/server/chat";
+import { resetChatCheck, resetChatModelState, setChatDeadlines } from "@/lib/server/chat";
 import { ConfigError } from "@/lib/server/http";
 import { findProvider, requireProvider } from "@/lib/server/provider";
 import { createSessionToken } from "@/lib/server/session";
@@ -101,7 +101,7 @@ describe("provider selection", () => {
 describe("chat provider routes (stubbed OpenAI-compatible API)", () => {
   type Captured = { url: string; headers: IncomingHttpHeaders; body: Record<string, unknown> };
   const captured: Captured[] = [];
-  let replies: { status: number; body: unknown; headers?: Record<string, string> }[] = [];
+  let replies: { status: number; body: unknown; headers?: Record<string, string>; delayMs?: number }[] = [];
   const server = createServer((req, res) => {
     let raw = "";
     req.on("data", (chunk: Buffer) => (raw += chunk.toString("utf8")));
@@ -109,8 +109,11 @@ describe("chat provider routes (stubbed OpenAI-compatible API)", () => {
       const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
       captured.push({ url: req.url ?? "", headers: req.headers, body });
       const reply = replies.length > 1 ? replies.shift()! : replies[0];
-      res.writeHead(reply.status, { "content-type": "application/json", ...reply.headers });
-      res.end(JSON.stringify(reply.body));
+      setTimeout(() => {
+        if (res.destroyed) return; // the caller gave up waiting
+        res.writeHead(reply.status, { "content-type": "application/json", ...reply.headers });
+        res.end(JSON.stringify(reply.body));
+      }, reply.delayMs ?? 0);
     });
   });
   const env = { ...process.env };
@@ -156,6 +159,8 @@ describe("chat provider routes (stubbed OpenAI-compatible API)", () => {
   beforeEach(() => {
     captured.length = 0;
     delete process.env.GD_MODEL;
+    delete process.env.GD_SCORING_MODEL;
+    setChatDeadlines();
     resetAiAvailability();
     resetChatModelState();
     resetChatCheck();
@@ -295,6 +300,21 @@ describe("chat provider routes (stubbed OpenAI-compatible API)", () => {
     assert.equal("reasoning_effort" in captured[0].body, false, "remembered for the next line");
   });
 
+  test("turn: a model too slow to answer hands over to the next within the deadline", async () => {
+    process.env.GD_MODEL = "model-a,model-b";
+    setChatDeadlines({ turnMs: 600 });
+    replies = [
+      { status: 200, body: completion("Too late, Priya."), delayMs: 2_000 },
+      { status: 200, body: completion("Priya, the quicker answer is this.") },
+    ];
+    const res = await requestTurn(post("/api/turn", turnBody(token)));
+    assert.deepEqual(await res.json(), { text: "Priya, the quicker answer is this." });
+    assert.deepEqual(
+      captured.map((c) => c.body.model),
+      ["model-a", "model-b"],
+    );
+  });
+
   test("turn: a reply that isn't JSON falls back to a practice line", async () => {
     replies = [{ status: 200, body: "<html>gateway</html>" }];
     const res = await requestTurn(post("/api/turn", turnBody(token)));
@@ -383,6 +403,44 @@ describe("chat provider routes (stubbed OpenAI-compatible API)", () => {
     assert.equal(body.reasoning_effort, "medium");
     const messages = body.messages as { content: string }[];
     assert.match(messages[1].content, /JSON Schema/);
+  });
+
+  test("score: an unusable reply from one model hands over to the next", async () => {
+    process.env.GD_SCORING_MODEL = "model-a,model-b";
+    const section = { rating: 6, comment: "Clear." };
+    const assessment: Assessment = {
+      overall: { score: 55, headline: "Steady", verdict: "You held your ground." },
+      opening: section,
+      participation: section,
+      content: { ...section, newPoints: [], repeatedPoints: [] },
+      evidence: { ...section, examples: [], references: [] },
+      interruptions: section,
+      drift: { ...section, pulledBack: null },
+      summary: section,
+      delivery: section,
+      strengths: ["Calm"],
+      improvements: ["Use data"],
+    };
+    replies = [
+      { status: 200, body: completion('{"overall": {"score": 55, "headline": "Ste', "length") },
+      { status: 200, body: completion(JSON.stringify(assessment)) },
+    ];
+    const record = {
+      config: { topic: TOPIC, userName: "Priya", minutes: 10, sttLang: "en-IN", inputMode: "voice" },
+      transcript: [],
+      interruptions: [],
+      discussionStartMs: 0,
+      discussionEndMs: 600_000,
+    };
+    const res = await requestScore(post("/api/score", { token, record }));
+    const out = (await res.json()) as { assessment: Assessment; offline?: boolean };
+    assert.equal(out.offline, undefined);
+    assert.equal(out.assessment.overall.headline, "Steady");
+    assert.deepEqual(
+      captured.map((c) => c.body.model),
+      ["model-a", "model-b"],
+    );
+    assert.equal(captured[0].body.max_tokens, 8000);
   });
 
   test("score: a reply that isn't a valid assessment falls back to a practice scorecard", async () => {
