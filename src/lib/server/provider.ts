@@ -52,7 +52,8 @@ const CHAT_PRESETS: Record<ChatProvider["id"], ChatPreset> = {
     turnModels: ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.5-flash"],
     scoringModels: ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
     turnExtra: { reasoning_effort: "low" },
-    scoringExtra: { reasoning_effort: "medium" },
+    // Medium reasoning made full Flash take over the 112 s scoring deadline on a 10-minute GD.
+    scoringExtra: { reasoning_effort: "low" },
   },
   groq: {
     label: "Groq",
