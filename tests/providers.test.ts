@@ -7,7 +7,9 @@ import { POST as requestScore } from "@/app/api/score/route";
 import { POST as startSession } from "@/app/api/session/route";
 import { POST as requestTurn } from "@/app/api/turn/route";
 import type { Assessment } from "@/lib/scoring";
+import { GET as health } from "@/app/api/health/route";
 import { resetAiAvailability } from "@/lib/server/ai";
+import { resetChatCheck, resetChatModelState } from "@/lib/server/chat";
 import { ConfigError } from "@/lib/server/http";
 import { findProvider, requireProvider } from "@/lib/server/provider";
 import { createSessionToken } from "@/lib/server/session";
@@ -34,17 +36,23 @@ describe("provider selection", () => {
     assert.equal(findProvider({ GOOGLE_API_KEY: "g" })?.id, "gemini");
   });
 
-  test("presets carry the endpoint, a default model and a low reasoning effort for lines", () => {
+  test("presets carry the endpoint, ordered default models and a low reasoning effort for lines", () => {
     const gemini = findProvider({ GEMINI_API_KEY: "g" });
     assert.ok(gemini && gemini.id === "gemini");
     assert.equal(gemini.baseUrl, "https://generativelanguage.googleapis.com/v1beta/openai");
-    assert.equal(gemini.turnModel, "gemini-2.5-flash");
-    assert.equal(gemini.scoringModel, "gemini-2.5-flash");
+    assert.deepEqual(gemini.turnModels, [
+      "gemini-flash-lite-latest",
+      "gemini-flash-latest",
+      "gemini-2.5-flash-lite",
+      "gemini-2.5-flash",
+    ]);
+    assert.equal(gemini.scoringModels[0], "gemini-flash-latest");
     assert.deepEqual(gemini.turnExtra, { reasoning_effort: "low" });
     const groq = findProvider({ GROQ_API_KEY: "q" });
     assert.ok(groq && groq.id === "groq");
     assert.equal(groq.baseUrl, "https://api.groq.com/openai/v1");
-    assert.equal(groq.turnModel, "openai/gpt-oss-120b");
+    assert.deepEqual(groq.turnModels, ["openai/gpt-oss-120b"]);
+    assert.deepEqual(groq.scoringModels, ["openai/gpt-oss-120b"]);
   });
 
   test("GD_PROVIDER wins over the auto order, and needs its own key", () => {
@@ -62,9 +70,19 @@ describe("provider selection", () => {
       LLM_BASE_URL: "http://localhost:9999/v1/",
     });
     assert.ok(p && p.id === "groq");
-    assert.equal(p.turnModel, "openai/gpt-oss-20b");
-    assert.equal(p.scoringModel, "openai/gpt-oss-120b");
+    assert.deepEqual(p.turnModels, ["openai/gpt-oss-20b"]);
+    assert.deepEqual(p.scoringModels, ["openai/gpt-oss-120b"]);
     assert.equal(p.baseUrl, "http://localhost:9999/v1");
+  });
+
+  test("GD_MODEL takes a comma-separated list, which scoring also uses unless GD_SCORING_MODEL is set", () => {
+    const p = findProvider({ GEMINI_API_KEY: "g", GD_MODEL: " gemini-a , ,gemini-b " });
+    assert.ok(p && p.id === "gemini");
+    assert.deepEqual(p.turnModels, ["gemini-a", "gemini-b"]);
+    assert.deepEqual(p.scoringModels, ["gemini-a", "gemini-b"]);
+    const blank = findProvider({ GEMINI_API_KEY: "g", GD_MODEL: " , " });
+    assert.ok(blank && blank.id === "gemini");
+    assert.equal(blank.turnModels[0], "gemini-flash-lite-latest");
   });
 
   test("a generic OpenAI-compatible endpoint needs a base URL and a model", () => {
@@ -88,7 +106,8 @@ describe("chat provider routes (stubbed OpenAI-compatible API)", () => {
     let raw = "";
     req.on("data", (chunk: Buffer) => (raw += chunk.toString("utf8")));
     req.on("end", () => {
-      captured.push({ url: req.url ?? "", headers: req.headers, body: JSON.parse(raw) as Record<string, unknown> });
+      const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      captured.push({ url: req.url ?? "", headers: req.headers, body });
       const reply = replies.length > 1 ? replies.shift()! : replies[0];
       res.writeHead(reply.status, { "content-type": "application/json", ...reply.headers });
       res.end(JSON.stringify(reply.body));
@@ -136,7 +155,10 @@ describe("chat provider routes (stubbed OpenAI-compatible API)", () => {
   });
   beforeEach(() => {
     captured.length = 0;
+    delete process.env.GD_MODEL;
     resetAiAvailability();
+    resetChatModelState();
+    resetChatCheck();
   });
   after(() => {
     server.close();
@@ -206,6 +228,121 @@ describe("chat provider routes (stubbed OpenAI-compatible API)", () => {
     assert.doesNotMatch(text, /gsk-test-stub|Invalid API Key/);
     await requestTurn(post("/api/turn", turnBody(token)));
     assert.equal(captured.length, 1, "the rejected key isn't tried again straight away");
+  });
+
+  test("turn: a missing model hands over to the next one, which is then used straight away", async () => {
+    process.env.GD_MODEL = "model-a,model-b";
+    replies = [
+      { status: 404, body: [{ error: { code: 404, message: "models/model-a is not found for API version v1beta" } }] },
+      { status: 200, body: completion("Priya, the numbers tell a different story.") },
+    ];
+    const res = await requestTurn(post("/api/turn", turnBody(token)));
+    assert.deepEqual(await res.json(), { text: "Priya, the numbers tell a different story." });
+    assert.deepEqual(
+      captured.map((c) => c.body.model),
+      ["model-a", "model-b"],
+    );
+
+    captured.length = 0;
+    replies = [{ status: 200, body: completion("Let me add one more number, Priya.") }];
+    await requestTurn(post("/api/turn", turnBody(token)));
+    assert.deepEqual(
+      captured.map((c) => c.body.model),
+      ["model-b"],
+      "the missing model is passed over",
+    );
+  });
+
+  test("turn: a model out of quota hands over to the next without waiting", async () => {
+    process.env.GD_MODEL = "model-a,model-b";
+    replies = [
+      { status: 429, body: [{ error: { code: 429, message: "Quota exceeded. Please retry in 41.2s." } }] },
+      { status: 200, body: completion("Priya, the data says otherwise.") },
+    ];
+    const started = Date.now();
+    const res = await requestTurn(post("/api/turn", turnBody(token)));
+    assert.equal(((await res.json()) as { offline?: boolean }).offline, undefined);
+    assert.ok(Date.now() - started < 2_000, "no wait before the next model");
+    assert.deepEqual(
+      captured.map((c) => c.body.model),
+      ["model-a", "model-b"],
+    );
+  });
+
+  test("turn: when every model is out of quota the GD carries on with a practice line", async () => {
+    process.env.GD_MODEL = "model-a,model-b";
+    replies = [{ status: 429, body: { error: { message: "Daily limit reached: GenerateRequestsPerDayPerProjectPerModel" } } }];
+    const res = await requestTurn(post("/api/turn", turnBody(token)));
+    assert.equal(res.status, 200);
+    assert.equal(((await res.json()) as { offline?: boolean }).offline, true);
+    assert.equal(captured.length, 2, "each model once; a daily limit isn't retried");
+  });
+
+  test("turn: a model that rejects the reasoning setting is retried without it", async () => {
+    replies = [
+      { status: 400, body: { error: { message: "Thinking level LOW is not supported for this model." } } },
+      { status: 200, body: completion("Priya, here is a number for you.") },
+    ];
+    const res = await requestTurn(post("/api/turn", turnBody(token)));
+    assert.deepEqual(await res.json(), { text: "Priya, here is a number for you." });
+    assert.equal(captured.length, 2);
+    assert.equal(captured[0].body.reasoning_effort, "low");
+    assert.equal("reasoning_effort" in captured[1].body, false);
+    assert.equal(captured[1].body.model, captured[0].body.model);
+
+    captured.length = 0;
+    await requestTurn(post("/api/turn", turnBody(token)));
+    assert.equal("reasoning_effort" in captured[0].body, false, "remembered for the next line");
+  });
+
+  test("turn: a reply that isn't JSON falls back to a practice line", async () => {
+    replies = [{ status: 200, body: "<html>gateway</html>" }];
+    const res = await requestTurn(post("/api/turn", turnBody(token)));
+    assert.equal(res.status, 200);
+    assert.equal(((await res.json()) as { offline?: boolean }).offline, true);
+  });
+
+  test("health: ?check=1 reports which models the key can use and a test line, without the key", async () => {
+    process.env.GD_MODEL = "model-a,model-b";
+    replies = [
+      { status: 200, body: { object: "list", data: [{ id: "models/model-b" }, { id: "models/other" }] } },
+      { status: 404, body: { error: { message: "model-a not found" } } },
+      { status: 200, body: completion("Hello everyone.") },
+    ];
+    const res = await health(new NextRequest("http://localhost/api/health?check=1"));
+    const text = await res.text();
+    const body = JSON.parse(text) as {
+      ai: { provider: string; turnModels: string[] };
+      check: { models: Record<string, boolean | null>; available: string[] | null; line: { ok: boolean; model?: string } };
+    };
+    assert.equal(body.ai.provider, "groq");
+    assert.deepEqual(body.ai.turnModels, ["model-a", "model-b"]);
+    assert.deepEqual(body.check.models, { "model-a": false, "model-b": true });
+    assert.deepEqual(body.check.available, ["model-b", "other"]);
+    assert.equal(body.check.line.ok, true);
+    assert.equal(body.check.line.model, "model-b");
+    assert.equal(captured[0].url, "/openai/v1/models");
+    assert.doesNotMatch(text, /gsk-test-stub/);
+
+    captured.length = 0;
+    await health(new NextRequest("http://localhost/api/health?check=1"));
+    assert.equal(captured.length, 0, "the check is cached");
+    const plain = (await (await health(new NextRequest("http://localhost/api/health"))).json()) as { check?: unknown };
+    assert.equal(plain.check, undefined);
+  });
+
+  test("health: a failed check line reports the service's message with the key removed", async () => {
+    replies = [
+      { status: 401, body: { error: { message: "Invalid API Key gsk-test-stub" } } },
+    ];
+    const res = await health(new NextRequest("http://localhost/api/health?check=1"));
+    const text = await res.text();
+    const body = JSON.parse(text) as { check: { models: Record<string, unknown>; line: { ok: boolean; status: number; detail: string } } };
+    assert.deepEqual(body.check.models, { "openai/gpt-oss-120b": null });
+    assert.equal(body.check.line.ok, false);
+    assert.equal(body.check.line.status, 401);
+    assert.equal(body.check.line.detail, "Invalid API Key [key]");
+    assert.doesNotMatch(text, /gsk-test-stub/);
   });
 
   test("score: JSON (even in a code fence) is parsed, validated and normalised", async () => {

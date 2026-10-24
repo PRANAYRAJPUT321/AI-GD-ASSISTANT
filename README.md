@@ -77,8 +77,8 @@ All settings are environment variables; see [`.env.example`](.env.example).
 | `GEMINI_API_KEY` | | Google Gemini API key (free tier available) |
 | `GROQ_API_KEY` | | Groq API key (free plan available) |
 | `LLM_BASE_URL` / `LLM_API_KEY` | | Any other OpenAI-compatible API (`GD_PROVIDER=openai`, also set `GD_MODEL`) |
-| `GD_MODEL` | per provider | Model for the AI participants: `claude-opus-5-5`, `gemini-2.5-flash` or `openai/gpt-oss-120b` |
-| `GD_SCORING_MODEL` | `claude-opus-5-5` | Model for the scorecard |
+| `GD_MODEL` | per provider | Model for the AI participants: `claude-opus-5-5`, `openai/gpt-oss-120b` (Groq), or for Gemini the list `gemini-flash-lite-latest, gemini-flash-latest, gemini-2.5-flash-lite, gemini-2.5-flash`. For Gemini, Groq and other OpenAI-compatible APIs, a comma-separated list is tried in order: a model that is missing or out of quota hands over to the next |
+| `GD_SCORING_MODEL` | per provider | Model (or list) for the scorecard: `claude-opus-5-5`, Gemini starts with `gemini-flash-latest`, otherwise `GD_MODEL` |
 | `GD_TURN_EFFORT` | `low` | Effort for participant lines (keeps replies fast) |
 | `DAILY_GD_LIMIT` | `3` | GDs per device per day (`0` = unlimited) |
 | `DAILY_GD_LIMIT_PER_IP` | `30` | GDs per IP address per day (`0` = off). Kept loose so a whole campus behind one network still works |
@@ -92,7 +92,7 @@ Without Upstash/KV, the limits are counted in memory per server instance. That's
 ## Deploy to Vercel
 
 1. Import the repository in Vercel (framework preset: Next.js).
-2. Set one AI key (`ANTHROPIC_API_KEY`, or a free `GEMINI_API_KEY` / `GROQ_API_KEY`), and preferably `SESSION_SECRET` (any long random string). Open `/api/health` after deploying to check which AI service the server uses.
+2. Set one AI key (`ANTHROPIC_API_KEY`, or a free `GEMINI_API_KEY` / `GROQ_API_KEY`), and preferably `SESSION_SECRET` (any long random string). Open `/api/health` after deploying to check which AI service the server uses, and `/api/health?check=1` to see which of the models your Gemini or Groq key can use and to generate one test line (cached for five minutes).
 3. For limits that hold across instances, add an Upstash Redis database from the Vercel Marketplace; it sets the `KV_REST_API_*` variables automatically.
 4. Deploy.
 
