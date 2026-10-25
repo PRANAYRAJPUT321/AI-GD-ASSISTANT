@@ -35,6 +35,7 @@ const CONFIG: GDConfig = {
   minutes: 10,
   sttLang: "en-IN",
   inputMode: "voice",
+  voiceSpeed: "natural",
   token: "token",
   notes: "",
 };

@@ -11,10 +11,15 @@
 // - Voices load asynchronously (`voiceschanged`), or never; `ready()` waits at most 1.5 s.
 // - Without speechSynthesis, `speak()` simulates the reading time so captions still advance.
 //
+// For an Indian GD the panel should sound Indian: English (India) voices are used whenever the
+// browser has any; failing that, a Hindi voice that reads English with an Indian accent (with
+// numbers spelled out in English, see spoken.ts); only then British, American or other English.
+//
 // Nothing here touches `window` at import time, so the module is safe to import during SSR.
 
 import { MODERATOR, type Cast, type VoiceProfile } from "../personas";
-import type { SpeakerId } from "../types";
+import type { SpeakerId, VoiceSpeed } from "../types";
+import { isEnglishLang, speechText } from "./spoken";
 import type { SpeechHandle, Voice } from "./types";
 
 /** Average speaking speed at rate 1, used for timing estimates and fallbacks. */
@@ -23,6 +28,10 @@ const CHARS_PER_SECOND = 14;
 const MAX_CHUNK_CHARS = 220;
 /** When a long sentence is broken up, no piece is made shorter than this. */
 const MIN_PIECE_CHARS = 40;
+/** A short breath between sentences, so a line isn't rattled off in one go. */
+export const SENTENCE_PAUSE_MS = 180;
+/** Rate multiplier for each speed setting, applied to every persona's own rate. */
+export const VOICE_SPEED_SCALE: Readonly<Record<VoiceSpeed, number>> = { relaxed: 0.85, natural: 1, brisk: 1.12 };
 /** Extra time a chunk gets beyond its estimate before we assume `onend` was lost. */
 const WATCHDOG_GRACE_MS = 3000;
 /** How long `ready()` waits for `voiceschanged` before giving up. */
@@ -196,43 +205,78 @@ export function voiceGender(name: string): Gender | null {
   return null;
 }
 
-/** 0 = en-IN, 1 = en-GB, 2 = en-US, 3 = other English, -1 = not English. */
-function languageRank(voice: VoiceInfo): number {
+/**
+ * Hindi voices that read English text well, with an Indian accent: Chrome's Google voice and
+ * the neural/online ones (Edge). Classic local Hindi voices may spell English out, so not those.
+ */
+const HINDI_READS_ENGLISH = /\b(?:google|natural|neural|online)\b/i;
+
+/** The accents a voice can give the panel, best first. */
+export type Accent = "indian" | "indian-hindi" | "british" | "american" | "english";
+
+const ACCENT_ORDER: readonly Accent[] = ["indian", "indian-hindi", "british", "american", "english"];
+
+/** The accent a voice gives the panel, or null when it can't speak the English lines. */
+function accentOf(voice: VoiceInfo): Accent | null {
   const lang = voice.lang.toLowerCase().replace(/_/g, "-");
-  if (lang.startsWith("en-in")) return 0;
-  if (lang.startsWith("en-gb")) return 1;
-  if (lang.startsWith("en-us")) return 2;
-  if (lang === "en" || lang.startsWith("en-")) return 3;
-  if (lang === "" && /english/i.test(voice.name)) return 3;
-  return -1;
+  if (lang.startsWith("en-in")) return "indian";
+  if (lang === "hi" || lang.startsWith("hi-")) return HINDI_READS_ENGLISH.test(voice.name) ? "indian-hindi" : null;
+  if (lang.startsWith("en-gb")) return "british";
+  if (lang.startsWith("en-us")) return "american";
+  if (lang === "en" || lang.startsWith("en-")) return "english";
+  if (lang === "" && /english/i.test(voice.name)) return "english";
+  return null;
 }
 
 interface RankedVoice {
   name: string;
   gender: Gender | null;
+  accent: Accent;
 }
 
-/** English voices, best first: language preference, then quality, then the system default. */
+/**
+ * The voices the panel may use, best first. Only the best accent the browser offers is kept:
+ * with any English (India) voice the whole panel sounds Indian (speakers share voices and are
+ * told apart by pitch) rather than mixing in British or American voices. Within it: quality,
+ * then the system default.
+ */
 function rankVoices(voices: readonly VoiceInfo[]): RankedVoice[] {
   const seen = new Set<string>();
-  const english = voices
-    .map((voice, index) => ({ voice, index, lang: languageRank(voice) }))
-    .filter(({ voice, lang }) => {
-      if (lang < 0 || seen.has(voice.name)) return false;
-      seen.add(voice.name);
+  const usable = voices
+    .map((voice, index) => ({ voice, index, accent: accentOf(voice) }))
+    .filter((entry): entry is typeof entry & { accent: Accent } => {
+      if (entry.accent === null || seen.has(entry.voice.name)) return false;
+      seen.add(entry.voice.name);
       return true;
     });
-  const serious = english.filter(({ voice }) => !NOVELTY_VOICE.test(voice.name));
-  const pool = serious.length > 0 ? serious : english;
+  const serious = usable.filter(({ voice }) => !NOVELTY_VOICE.test(voice.name));
+  const candidates = serious.length > 0 ? serious : usable;
+  const rank = (accent: Accent) => ACCENT_ORDER.indexOf(accent);
+  const best = Math.min(...candidates.map(({ accent }) => rank(accent)));
+  // Indian voices are kept to themselves; otherwise any English voice may be used (best first).
+  const pool = candidates.filter(({ accent }) => (best <= 1 ? rank(accent) === best : true));
   const quality = (v: VoiceInfo) => (HIGH_QUALITY_VOICE.test(v.name) ? 0 : 1);
   pool.sort(
     (a, b) =>
-      a.lang - b.lang ||
+      rank(a.accent) - rank(b.accent) ||
       quality(a.voice) - quality(b.voice) ||
       Number(Boolean(b.voice.default)) - Number(Boolean(a.voice.default)) ||
       a.index - b.index,
   );
-  return pool.map(({ voice }) => ({ name: voice.name, gender: voiceGender(voice.name) }));
+  return pool.map(({ voice, accent }) => ({ name: voice.name, gender: voiceGender(voice.name), accent }));
+}
+
+export interface PanelAccent {
+  /** The accent the panel will have; null when the browser offers no usable voice (yet). */
+  accent: Accent | null;
+  /** The voices that will be used, best first. */
+  voices: string[];
+}
+
+/** Which accent the panel will speak with on this browser, for the setup screen. */
+export function panelAccent(voices: readonly VoiceInfo[]): PanelAccent {
+  const ranked = rankVoices(voices);
+  return { accent: ranked[0]?.accent ?? null, voices: ranked.map((voice) => voice.name) };
 }
 
 function profileOf(speaker: VoicedSpeaker, cast: Cast): VoiceProfile {
@@ -253,10 +297,11 @@ function tierOf(voice: RankedVoice, want: Gender, uses: number): number {
 const LAST_SAME_GENDER_TIER = 3;
 
 /**
- * Picks a system voice (by name) for each speaker: English voices preferring en-IN, then
- * en-GB, then en-US, then any English; high-quality voices first within a language; matching
- * the persona's gender by voice name; and a different voice per speaker while enough exist.
- * `user` (and every speaker, when there is no English voice) maps to null: use the default.
+ * Picks a system voice (by name) for each speaker: Indian voices whenever the browser has any
+ * (English (India), else a Hindi voice that reads English), otherwise British, then American,
+ * then any English; high-quality voices first; matching the persona's gender by voice name;
+ * and a different voice per speaker while enough exist. `user` (and every speaker, when there
+ * is no usable voice) maps to null: use the default.
  */
 export function pickVoices(voices: readonly VoiceInfo[], cast: Cast): Record<SpeakerId, string | null> {
   const ranked = rankVoices(voices);
@@ -295,13 +340,19 @@ export interface Prosody {
 }
 
 /**
- * Rate and pitch per speaker for a voice assignment. Each persona keeps its profile rate.
+ * Rate and pitch per speaker for a voice assignment. Each persona keeps its profile rate,
+ * scaled by the chosen speed.
  * A speaker with a voice of its own keeps its profile pitch; speakers sharing one voice
  * (including "no voice": the browser default) get evenly spread pitches, male personas
  * lower and female higher, so they stay distinguishable. A voice that sounds like the other
  * gender is nudged towards the persona's.
  */
-export function prosodyFor(assignment: Record<SpeakerId, string | null>, cast: Cast): Record<SpeakerId, Prosody> {
+export function prosodyFor(
+  assignment: Record<SpeakerId, string | null>,
+  cast: Cast,
+  speed: VoiceSpeed = "natural",
+): Record<SpeakerId, Prosody> {
+  const scale = VOICE_SPEED_SCALE[speed];
   const result = { user: { rate: 1, pitch: 1 } } as Record<SpeakerId, Prosody>;
   const groups = new Map<string | null, VoicedSpeaker[]>();
   for (const speaker of VOICED_SPEAKERS) {
@@ -323,7 +374,7 @@ export function prosodyFor(assignment: Record<SpeakerId, string | null>, cast: C
         heard === null || heard === profile.gender
           ? 1
           : 1 + (profile.gender === "female" ? GENDER_PITCH_CORRECTION : -GENDER_PITCH_CORRECTION);
-      result[speaker] = { rate: profile.rate, pitch: clamp(base * correction, MIN_PITCH, MAX_PITCH) };
+      result[speaker] = { rate: profile.rate * scale, pitch: clamp(base * correction, MIN_PITCH, MAX_PITCH) };
     });
   }
   return result;
@@ -365,6 +416,8 @@ class SpeechRun implements SpeechHandle {
   private chunkStartedAt = 0;
   /** Progress within the current chunk reported by boundary events; -1 until one arrives. */
   private boundaryChars = -1;
+  /** Characters of the current chunk per character the voice actually says (spelled-out numbers). */
+  private chunkScale = 1;
   /** spokenChars() never goes backwards (a time estimate may run ahead of a late boundary). */
   private highWater = 0;
   private utterance: SpeechSynthesisUtterance | null = null;
@@ -391,7 +444,7 @@ class SpeechRun implements SpeechHandle {
     const chunk = this.chunks[this.index];
     if (!chunk) return this.highWater;
     const elapsedMs = now() - this.chunkStartedAt;
-    const estimated = Math.floor((elapsedMs / 1000) * CHARS_PER_SECOND * this.plan.rate);
+    const estimated = Math.floor((elapsedMs / 1000) * CHARS_PER_SECOND * this.plan.rate * this.chunkScale);
     const within = this.utterance && this.boundaryChars >= 0 ? this.boundaryChars : estimated;
     this.highWater = Math.max(this.highWater, chunk.start + clamp(within, 0, chunk.text.length));
     return this.highWater;
@@ -405,7 +458,7 @@ class SpeechRun implements SpeechHandle {
     this.synth?.cancel();
   }
 
-  /** Moves on to the next chunk, or finishes after the last one. */
+  /** Moves on to the next chunk (after a short breath between sentences), or finishes after the last one. */
   private advance(): void {
     this.release();
     this.index += 1;
@@ -414,18 +467,34 @@ class SpeechRun implements SpeechHandle {
       this.finish(true);
       return;
     }
+    if (this.index > 0) {
+      // Progress holds at the end of the previous sentence during the pause.
+      this.chunkStartedAt = now() + SENTENCE_PAUSE_MS;
+      this.boundaryChars = -1;
+      this.timer = setTimeout(() => this.startChunk(chunk), SENTENCE_PAUSE_MS);
+    } else {
+      this.startChunk(chunk);
+    }
+  }
+
+  private startChunk(chunk: TextChunk): void {
+    this.timer = undefined;
     this.chunkStartedAt = now();
     this.boundaryChars = -1;
-    const estimate = estimateDurationMs(chunk.text, this.plan.rate);
+    const spoken = speechText(chunk.text, { numbersAsWords: !isEnglishLang(this.plan.lang) });
+    this.chunkScale = chunk.text.length / Math.max(1, spoken.length);
+    const estimate = estimateDurationMs(spoken, this.plan.rate);
     if (this.synth) {
-      this.speakChunk(this.synth, chunk, estimate);
+      this.speakChunk(this.synth, chunk, spoken, estimate);
     } else {
       this.timer = setTimeout(() => this.advance(), estimate);
     }
   }
 
-  private speakChunk(synth: SpeechSynthesis, chunk: TextChunk, estimate: number): void {
-    const utterance = new window.SpeechSynthesisUtterance(chunk.text);
+  private speakChunk(synth: SpeechSynthesis, chunk: TextChunk, spoken: string, estimate: number): void {
+    // Boundary positions refer to the spoken text; they only map onto the line when it is unchanged.
+    const aligned = spoken === chunk.text;
+    const utterance = new window.SpeechSynthesisUtterance(spoken);
     if (this.plan.voice) utterance.voice = this.plan.voice;
     utterance.lang = this.plan.lang;
     utterance.rate = this.plan.rate;
@@ -443,9 +512,9 @@ class SpeechRun implements SpeechHandle {
       // charIndex is where the current word starts; include the word itself when known so
       // the caption highlights the word being spoken.
       const reach = event.charIndex + (event.name === "word" && event.charLength > 0 ? event.charLength : 0);
-      this.boundaryChars = Math.max(this.boundaryChars, clamp(reach, 0, chunk.text.length));
+      if (aligned) this.boundaryChars = Math.max(this.boundaryChars, clamp(reach, 0, chunk.text.length));
       // Progress proves the engine is alive: re-arm the watchdog for what is left.
-      this.watch(estimateDurationMs(chunk.text.slice(this.boundaryChars), this.plan.rate) + WATCHDOG_GRACE_MS);
+      this.watch(estimateDurationMs(spoken.slice(clamp(reach, 0, spoken.length)), this.plan.rate) + WATCHDOG_GRACE_MS);
     };
     utterance.onend = () => {
       if (isCurrent()) this.advance();
@@ -509,11 +578,14 @@ class BrowserVoice implements Voice {
   private active: SpeechRun | null = null;
   private readonly onVoicesChanged = () => this.loadVoices();
 
-  constructor(private readonly cast: Cast) {
+  constructor(
+    private readonly cast: Cast,
+    private readonly speed: VoiceSpeed,
+  ) {
     this.synth = isSpeechSynthesisSupported() ? window.speechSynthesis : null;
     this.supported = this.synth !== null;
     this.assignment = pickVoices([], cast);
-    this.prosody = prosodyFor(this.assignment, cast);
+    this.prosody = prosodyFor(this.assignment, cast, speed);
     if (this.synth) {
       this.synth.addEventListener("voiceschanged", this.onVoicesChanged);
       this.loadVoices();
@@ -574,7 +646,7 @@ class BrowserVoice implements Voice {
     this.voices = voices;
     if (this.locked) return;
     this.assignment = pickVoices(list, this.cast);
-    this.prosody = prosodyFor(this.assignment, this.cast);
+    this.prosody = prosodyFor(this.assignment, this.cast, this.speed);
   }
 
   private lockVoices(): void {
@@ -593,7 +665,12 @@ class BrowserVoice implements Voice {
   }
 }
 
+export interface VoiceOptions {
+  /** How fast the panel speaks; "natural" by default. */
+  speed?: VoiceSpeed;
+}
+
 /** Text-to-speech for this GD's cast: a distinct voice (or pitch) per participant. */
-export function createVoice(cast: Cast): Voice {
-  return new BrowserVoice(cast);
+export function createVoice(cast: Cast, options: VoiceOptions = {}): Voice {
+  return new BrowserVoice(cast, options.speed ?? "natural");
 }

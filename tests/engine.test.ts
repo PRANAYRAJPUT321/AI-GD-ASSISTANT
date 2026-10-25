@@ -210,6 +210,7 @@ function setup(options: Options = {}) {
   const meter = new FakeMeter();
   const listeners: FakeListener[] = [];
   const config: GDConfig = {
+    voiceSpeed: "natural",
     topic: { id: "business:test", title: "Should companies adopt a four-day work week?", category: "business" },
     userName: "Priya",
     minutes: options.minutes ?? 0.05,

@@ -35,7 +35,7 @@ export function useEngine(config: GDConfig, cast: Cast, onFinished: (record: GDR
   const finished = useEffectEvent((record: GDRecord) => onFinished(record));
 
   useEffect(() => {
-    const voice = createVoice(cast);
+    const voice = createVoice(cast, { speed: config.voiceSpeed });
     // Voices load asynchronously; start loading now so the moderator has one at start().
     void voice.ready();
     const micMeter = config.inputMode === "voice" && !meterConflictsWithRecognition() ? createMicMeter() : undefined;
