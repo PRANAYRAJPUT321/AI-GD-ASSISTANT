@@ -3,7 +3,15 @@
 // no browser APIs here, so all of it runs in unit tests.
 
 import { MODERATOR, USER_COLOR, type Cast } from "@/lib/personas";
-import type { EngineState, GDConfig, InterruptionEvent, PersonaId, SpeakerId, Turn } from "@/lib/types";
+import {
+  PERSONA_IDS,
+  type EngineState,
+  type GDConfig,
+  type InterruptionEvent,
+  type PersonaId,
+  type SpeakerId,
+  type Turn,
+} from "@/lib/types";
 
 /** Everyone at the table except the moderator (the airtime and turn counts cover these). */
 export type Participant = PersonaId | "user";
@@ -225,6 +233,52 @@ export function recentlyCutOff(state: EngineState): ReadonlySet<SpeakerId> {
     if (state.nowMs - cutAt < CUT_OFF_FLASH_MS) cut.add(turn.speaker);
   }
   return cut;
+}
+
+// ---------- Reactions ----------
+
+/** How long a listener's reaction shows after a turn ends. */
+export const REACTION_MS = 2400;
+
+/** Each persona reacts in character: the agreer cheers, the dominator rolls its eyes. */
+const REACTIONS: Record<PersonaId, readonly string[]> = {
+  dominator: ["🙄", "😤", "✋"],
+  data: ["🤔", "📈", "🧐"],
+  agreer: ["👍", "👏", "💯"],
+  drifter: ["💭", "😅", "🎈"],
+  smart: ["🤔", "💡", "📝"],
+};
+
+/** A small stable hash, so a turn always gets the same reaction across renders. */
+function hashOf(text: string): number {
+  let hash = 0;
+  for (const char of text) hash = (Math.imul(hash, 31) + (char.codePointAt(0) ?? 0)) >>> 0;
+  return hash;
+}
+
+export interface SeatReaction {
+  emoji: string;
+  /** Unique per reaction, for keyed enter/exit animations. */
+  key: string;
+}
+
+/**
+ * A listener's reaction to the turn that just ended, shown for a moment afterwards (decorative).
+ * The agreer always cheers the candidate; otherwise one listener, picked from the turn id,
+ * reacts in character. The moderator's turns and the intro get none.
+ */
+export function seatReactions(state: EngineState): ReadonlyMap<SpeakerId, SeatReaction> {
+  const reactions = new Map<SpeakerId, SeatReaction>();
+  const last = state.transcript.at(-1);
+  if (!last || last.phase === "intro" || last.speaker === "moderator") return reactions;
+  const since = state.nowMs - last.endMs;
+  if (since < 0 || since >= REACTION_MS) return reactions;
+  const seed = hashOf(last.id);
+  const listeners = PERSONA_IDS.filter((id) => id !== last.speaker);
+  const reactor = last.speaker === "user" ? "agreer" : listeners[seed % listeners.length];
+  const options = REACTIONS[reactor];
+  reactions.set(reactor, { emoji: options[(seed >>> 4) % options.length], key: `${last.id}:${reactor}` });
+  return reactions;
 }
 
 // ---------- The floor ----------

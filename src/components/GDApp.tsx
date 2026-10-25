@@ -4,9 +4,11 @@ import { LoaderCircle } from "lucide-react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiCallError, startSession } from "@/lib/api";
+import type { ResultProgress } from "@/lib/progress";
 import type { Scorecard } from "@/lib/scoring";
 import type { GDConfig, GDRecord } from "@/lib/types";
 import { PrepScreen } from "./prep/PrepScreen";
+import { recordResult } from "./progress/storage";
 import { SetupScreen, type SetupChoice } from "./setup/SetupScreen";
 import { cn } from "./ui/cn";
 import { ErrorBoundary } from "./ui/ErrorBoundary";
@@ -30,7 +32,7 @@ type Phase =
   | { name: "prep"; choice: SetupChoice; token: string; issuedAt: number }
   | { name: "room"; config: GDConfig }
   | { name: "scoring"; record: GDRecord; token: string }
-  | { name: "scorecard"; card: Scorecard };
+  | { name: "scorecard"; card: Scorecard; progress: ResultProgress | null };
 
 type PhaseName = Phase["name"];
 
@@ -214,12 +216,18 @@ export function GDApp({ dailyLimit }: { dailyLimit: number | null }) {
           <ScoringScreen
             record={phase.record}
             token={phase.token}
-            onScored={(card: Scorecard) => go({ name: "scorecard", card })}
+            onScored={(card: Scorecard) => go({ name: "scorecard", card, progress: recordResult(card) })}
             onBack={() => backToSetup(prefillForPhase(phase))}
           />
         );
       case "scorecard":
-        return <ScorecardView card={phase.card} onRestart={() => backToSetup(prefillForPhase(phase))} />;
+        return (
+          <ScorecardView
+            card={phase.card}
+            progress={phase.progress}
+            onRestart={() => backToSetup(prefillForPhase(phase))}
+          />
+        );
     }
   }
 

@@ -16,12 +16,15 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useId, useState, type ReactNode } from "react";
+import { earnedBadges, type ResultProgress } from "@/lib/progress";
 import type { Scorecard } from "@/lib/scoring";
 import { formatClock, topicCategoryLabel } from "@/lib/transcript-text";
 import { Button } from "@/components/ui/Button";
 import { Card, Eyebrow } from "@/components/ui/Card";
 import { cn } from "@/components/ui/cn";
 import { tint } from "@/components/ui/style";
+import { Confetti } from "@/components/progress/Confetti";
+import { BadgesEarned, ProgressChips } from "@/components/progress/ScorecardProgress";
 import { AirtimeChart, FAIR_SHARE } from "./AirtimeChart";
 import { AssessmentSections } from "./AssessmentSections";
 import { DownloadTranscriptButton } from "./DownloadTranscriptButton";
@@ -54,8 +57,23 @@ function bandFor(score: number): ScoreBand {
   return SCORE_BANDS.find((band) => score >= band.min) ?? SCORE_BANDS[SCORE_BANDS.length - 1];
 }
 
-/** The scorecard: overall verdict, measured numbers, airtime, feedback by area and the transcript. */
-export function ScorecardView({ card, onRestart }: { card: Scorecard; onRestart(): void }) {
+/** Score from which a GD is worth celebrating even without a new best or badge. */
+const CELEBRATE_SCORE = 75;
+
+/**
+ * The scorecard: overall verdict, progress since last time, badges, measured numbers,
+ * airtime, feedback by area and the transcript.
+ */
+export function ScorecardView({
+  card,
+  progress = null,
+  onRestart,
+}: {
+  card: Scorecard;
+  /** What this GD changed in the device's practice history; null when it wasn't recorded. */
+  progress?: ResultProgress | null;
+  onRestart(): void;
+}) {
   const id = useId();
   // The record carries no wall-clock time; the scorecard appears moments after the GD ends.
   const [date] = useState(() => new Date());
@@ -64,6 +82,10 @@ export function ScorecardView({ card, onRestart }: { card: Scorecard; onRestart(
   const band = bandFor(assessment.overall.score);
   const BandIcon = band.icon;
   const typed = metrics.inputMode === "text";
+  const badges = earnedBadges(metrics, assessment);
+  const celebrate =
+    assessment.overall.score >= CELEBRATE_SCORE ||
+    (progress !== null && (progress.personalBest || progress.newBadges.length > 0));
 
   const actions = (
     <>
@@ -77,6 +99,7 @@ export function ScorecardView({ card, onRestart }: { card: Scorecard; onRestart(
   return (
     <div className="flex flex-col gap-6 sm:gap-8 print:gap-5">
       <PrintStyles />
+      {celebrate && <Confetti />}
 
       <header className="flex flex-col gap-3">
         <Eyebrow>Your scorecard · {topicCategoryLabel(config.topic)}</Eyebrow>
@@ -141,6 +164,7 @@ export function ScorecardView({ card, onRestart }: { card: Scorecard; onRestart(
                 {assessment.overall.headline}
               </h2>
               <p className="text-base leading-relaxed text-ink-2 wrap-break-word">{assessment.overall.verdict}</p>
+              {progress && <ProgressChips progress={progress} />}
               <p className="text-xs text-ink-2">
                 Scored out of 100 across the eight areas below. Most practice GDs land between 45 and 65.
               </p>
@@ -153,6 +177,10 @@ export function ScorecardView({ card, onRestart }: { card: Scorecard; onRestart(
             </div>
           </div>
         </Card>
+      </Reveal>
+
+      <Reveal>
+        <BadgesEarned earned={badges} fresh={progress?.newBadges ?? []} />
       </Reveal>
 
       <section aria-labelledby={`${id}-numbers`} className="flex flex-col gap-3">

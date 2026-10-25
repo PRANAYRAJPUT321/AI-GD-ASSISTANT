@@ -1,8 +1,8 @@
 "use client";
 
 import { ArrowRight, CircleAlert, Info, Keyboard, Mic } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
-import { useId, useState, type FormEvent } from "react";
+import { AnimatePresence, motion, useInView } from "motion/react";
+import { useId, useRef, useState, type FormEvent } from "react";
 import { castFor } from "@/lib/personas";
 import { isRecognitionSupported } from "@/lib/speech/stt";
 import { isSpeechSynthesisSupported } from "@/lib/speech/tts";
@@ -13,9 +13,11 @@ import { cn } from "@/components/ui/cn";
 import { useClientValue, useStoredString, writeStored } from "@/components/ui/hooks";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { fieldClass } from "@/components/ui/style";
+import { ProgressCard } from "@/components/progress/ProgressCard";
 import { EnvironmentCheck } from "./EnvironmentCheck";
 import { Hero } from "./Hero";
 import { MeetTheRoom } from "./MeetTheRoom";
+import { StickyStart } from "./StickyStart";
 import {
   ACCENT_OPTIONS,
   DEFAULT_ACCENT,
@@ -81,6 +83,11 @@ export function SetupScreen({ dailyLimit, initial, onStart, busy, error }: Setup
   const missing = [!userName && "your name", !topic && "a topic"].filter(Boolean).join(" and ");
   const canStart = !missing && !topicChoice.shuffling;
 
+  // The floating start bar takes over while the start card is off screen, once setup has begun.
+  const startArea = useRef<HTMLDivElement>(null);
+  const startVisible = useInView(startArea, { amount: 0.5 });
+  const showStickyStart = !startVisible && Boolean(userName || topic);
+
   function handleNameChange(value: string) {
     setNameDraft(value);
     writeStored(STORAGE_KEYS.name, cleanName(value));
@@ -104,8 +111,10 @@ export function SetupScreen({ dailyLimit, initial, onStart, busy, error }: Setup
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-8 sm:gap-10">
+    <form id={`${id}-form`} onSubmit={handleSubmit} noValidate className="flex flex-col gap-8 sm:gap-10">
       <Hero cast={cast} userName={userName} />
+
+      <ProgressCard />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         <div className="flex min-w-0 flex-col gap-6">
@@ -168,7 +177,7 @@ export function SetupScreen({ dailyLimit, initial, onStart, busy, error }: Setup
           <EnvironmentCheck recognition={recognition} speech={speech} />
 
           <Card className="flex flex-col gap-4 p-4 sm:p-5">
-            <div>
+            <div ref={startArea}>
               <Eyebrow>Ready when you are</Eyebrow>
               <AnimatePresence mode="popLayout" initial={false}>
                 <motion.p
@@ -251,6 +260,16 @@ export function SetupScreen({ dailyLimit, initial, onStart, busy, error }: Setup
           </Card>
         </aside>
       </div>
+
+      <StickyStart
+        show={showStickyStart}
+        formId={`${id}-form`}
+        topic={topic}
+        minutes={minutes}
+        canStart={canStart}
+        busy={busy}
+        missing={missing}
+      />
     </form>
   );
 }

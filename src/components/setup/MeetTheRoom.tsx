@@ -43,7 +43,7 @@ export function MeetTheRoom({ cast, userName }: { cast: Cast; userName: string }
 /** Swaps a name with a small roll, so live edits are visible. */
 function LiveName({ name }: { name: string }) {
   return (
-    <span className="relative inline-flex overflow-hidden">
+    <span className="relative inline-flex max-w-full shrink-0 overflow-hidden">
       <AnimatePresence mode="popLayout" initial={false}>
         <motion.span
           key={name}
@@ -96,9 +96,9 @@ function RoomCard({
 function PersonaCard({ persona, index, renamedFor }: { persona: Persona; index: number; renamedFor: string | null }) {
   return (
     <RoomCard color={persona.color} emoji={persona.emoji} index={index}>
-      <p className="flex items-baseline gap-2 font-semibold text-ink">
+      <p className="flex flex-wrap items-baseline gap-x-2 font-semibold text-ink">
         <LiveName name={persona.name} />
-        <span className="truncate text-xs font-medium text-ink-2">{persona.role}</span>
+        <span className="text-xs font-medium text-ink-2">{persona.role}</span>
       </p>
       <p className="mt-0.5 text-sm leading-snug text-ink-2">{persona.blurb}</p>
       <AnimatePresence initial={false}>
@@ -120,9 +120,9 @@ function PersonaCard({ persona, index, renamedFor }: { persona: Persona; index: 
 function CandidateCard({ name, index }: { name: string; index: number }) {
   return (
     <RoomCard color={USER_COLOR} emoji="🎓" index={index}>
-      <p className="flex items-baseline gap-2 font-semibold text-ink">
+      <p className="flex flex-wrap items-baseline gap-x-2 font-semibold text-ink">
         <LiveName name={name || "You"} />
-        <span className="truncate text-xs font-medium text-ink-2">The Candidate</span>
+        <span className="text-xs font-medium text-ink-2">The Candidate</span>
       </p>
       <p className="mt-0.5 text-sm leading-snug text-ink-2">Open strong, jump in, pull the drift back, summarise.</p>
     </RoomCard>

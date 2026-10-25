@@ -13,9 +13,11 @@ import {
   recentlyCutOff,
   SEAT_ORDER,
   seatInfo,
+  seatReactions,
   stageStatus,
   type ByParticipant,
   type SeatInfo,
+  type SeatReaction,
   type StageStatus,
 } from "./model";
 
@@ -48,11 +50,13 @@ interface StageProps {
 /**
  * The table: an oval with the moderator at the head and everyone else around it on tablets
  * and desktops, a compact grid on phones. The speaking seat pulses in its colour, the one
- * about to speak shows dots, and a seat that was just cut off flashes a tag.
+ * about to speak shows dots, a seat that was just cut off flashes a tag, and listeners react
+ * to what was just said.
  */
 export function Stage({ state, cast, airtime, turns, hasMicMeter }: StageProps) {
   const status = stageStatus(state, cast);
   const cutOff = recentlyCutOff(state);
+  const reactions = seatReactions(state);
 
   return (
     <section
@@ -78,6 +82,7 @@ export function Stage({ state, cast, airtime, turns, hasMicMeter }: StageProps) 
             speaking={state.activeSpeaker === id}
             preparing={state.preparing === id}
             cutOff={cutOff.has(id)}
+            reaction={reactions.get(id) ?? null}
             turns={id === "moderator" ? null : turns[id]}
             airtimeMs={id === "moderator" ? null : airtime[id]}
             voice={seatVoice(id, state, hasMicMeter)}
@@ -215,6 +220,8 @@ interface SeatProps {
   speaking: boolean;
   preparing: boolean;
   cutOff: boolean;
+  /** A listener's emoji reaction to the turn that just ended. */
+  reaction: SeatReaction | null;
   /** null for the moderator, who has no stats. */
   turns: number | null;
   airtimeMs: number | null;
@@ -234,7 +241,7 @@ function seatStatusText({ seat, speaking, preparing, cutOff, interjecting }: Sea
 }
 
 function Seat(props: SeatProps) {
-  const { seat, style, speaking, preparing, cutOff, turns, airtimeMs, voice } = props;
+  const { seat, style, speaking, preparing, cutOff, reaction, turns, airtimeMs, voice } = props;
   const moderator = seat.id === "moderator";
   const stats =
     turns === null || airtimeMs === null
@@ -287,6 +294,7 @@ function Seat(props: SeatProps) {
           )}
         </AnimatePresence>
         <AnimatePresence>{cutOff && <CutOffTag />}</AnimatePresence>
+        <AnimatePresence>{reaction && <ReactionBubble key={reaction.key} emoji={reaction.emoji} />}</AnimatePresence>
       </motion.div>
 
       <div className={cn("flex min-w-0 max-w-full flex-col", moderator ? "md:items-center" : "items-center")}>
@@ -302,6 +310,22 @@ function Seat(props: SeatProps) {
       </div>
       <span className="sr-only">{seatStatusText(props)}</span>
     </li>
+  );
+}
+
+/** A listener's emoji, popping up beside their avatar and floating off (decorative). */
+function ReactionBubble({ emoji }: { emoji: string }) {
+  return (
+    <motion.span
+      aria-hidden
+      initial={{ opacity: 0, scale: 0.3, y: 8 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.85, y: -16 }}
+      transition={{ type: "spring", stiffness: 460, damping: 17 }}
+      className="absolute -left-4 -top-3 z-10 grid size-8 place-items-center rounded-full border border-line bg-panel text-base shadow-card"
+    >
+      {emoji}
+    </motion.span>
   );
 }
 
