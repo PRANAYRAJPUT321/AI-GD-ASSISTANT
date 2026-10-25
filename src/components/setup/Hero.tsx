@@ -4,6 +4,7 @@ import { Hand, ListChecks, NotebookPen, Quote, Trophy, Users, type LucideIcon } 
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { MODERATOR, USER_COLOR, type Cast } from "@/lib/personas";
+import { PERSONA_IDS } from "@/lib/types";
 import type { SpeakerId } from "@/lib/types";
 import { cn } from "@/components/ui/cn";
 import { usePrefersReducedMotion } from "@/components/ui/hooks";
@@ -25,7 +26,18 @@ const STEPS: readonly { icon: LucideIcon; title: string; detail: string }[] = [
  */
 export function Hero({ cast, userName }: { cast: Cast; userName: string }) {
   return (
-    <section aria-labelledby="hero-title" className="flex flex-col gap-8">
+    <section aria-labelledby="hero-title" className="relative isolate flex flex-col gap-8">
+      {/* A soft wash of colour behind the intro (decorative, static). */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -inset-x-16 -top-24 -z-10 h-[28rem] mask-[radial-gradient(ellipse_at_top,black_35%,transparent_75%)] print:hidden"
+        style={{
+          background:
+            "radial-gradient(38% 48% at 18% 32%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%)," +
+            "radial-gradient(32% 42% at 82% 22%, color-mix(in srgb, #e5484d 15%, transparent), transparent 70%)," +
+            "radial-gradient(30% 40% at 58% 78%, color-mix(in srgb, #14b8a6 12%, transparent), transparent 70%)",
+        }}
+      />
       <div className="grid items-center gap-8 md:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-4">
           <p className="inline-flex w-fit items-center gap-2 rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-ink-2 shadow-card">
@@ -51,6 +63,7 @@ export function Hero({ cast, userName }: { cast: Cast; userName: string }) {
             Practise a real group discussion against five AI participants who talk over you, drift off-topic and react
             to what you actually say. Then get a scorecard and the full transcript.
           </p>
+          <WaitingRoom cast={cast} />
         </div>
         <RoundTablePreview cast={cast} userName={userName} />
       </div>
@@ -77,6 +90,32 @@ export function Hero({ cast, userName }: { cast: Cast; userName: string }) {
         ))}
       </ol>
     </section>
+  );
+}
+
+/** Phones only (the round table needs more room): the five participants, waiting for you. */
+function WaitingRoom({ cast }: { cast: Cast }) {
+  const names = PERSONA_IDS.map((id) => cast[id].name);
+  return (
+    <div className="flex items-center gap-3 sm:hidden">
+      <div aria-hidden className="flex -space-x-2">
+        {PERSONA_IDS.map((id, index) => (
+          <motion.span
+            key={id}
+            initial={{ scale: 0.4, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 420, damping: 18, delay: 0.2 + index * 0.08 }}
+            className="grid size-9 place-items-center rounded-full border-2 border-bg text-base"
+            style={{ background: `color-mix(in srgb, ${cast[id].color} 22%, var(--panel))` }}
+          >
+            {cast[id].emoji}
+          </motion.span>
+        ))}
+      </div>
+      <p className="text-sm font-medium text-ink-2">
+        {names[0]}, {names[1]} and 3 others are waiting for you
+      </p>
+    </div>
   );
 }
 

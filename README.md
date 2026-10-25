@@ -40,6 +40,10 @@ If your first name matches a participant's, that participant uses a different na
 
 Entries, airtime, pace, fillers and interruptions are measured directly from the session. The judgement calls (new vs repeated points, quality of the summary, and so on) come from Claude reading the transcript.
 
+### Progress and badges
+
+Each scored GD is remembered in your browser (on this device only; nothing is stored on the server). The start screen shows your day streak, GDs done, best and last score and a score trend. Each GD can earn up to nine badges for things you did: Opener, Fearless (cut in), Fair share, Data-driven, Bridge builder, Held your ground, Anchor (pulled the drift back), Closer and Smooth talker. The scorecard shows the change since your last GD, new badges and a few to go for next time, with a burst of confetti for a new best or a new badge.
+
 ## Browser support
 
 - **Best:** Chrome or Edge on a desktop or laptop, **with headphones** so the mic doesn't pick up the AI voices.
@@ -118,6 +122,7 @@ The default is **limited**: 3 GDs per device per day, 30 per IP per day, and no 
 - **Speech** (`src/lib/speech/`): `speechSynthesis` voices per participant (preferring Indian-English voices), `SpeechRecognition` for your mic, and a live mic meter.
 - **API routes** (`src/app/api/`): `session` (daily limits + signed session token), `turn` (one participant line from Claude), and `score` (metrics + Claude's structured assessment).
 - **Metrics** (`src/lib/metrics.ts`): deterministic numbers (entries, airtime, pace, fillers, interruptions) computed from the transcript.
+- **Progress** (`src/lib/progress.ts`): badges, streaks and score trends from the practice history kept in `localStorage`.
 
 The full design spec is in [`docs/DESIGN.md`](docs/DESIGN.md).
 

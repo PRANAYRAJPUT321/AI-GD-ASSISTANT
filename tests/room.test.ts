@@ -18,7 +18,9 @@ import {
   formatAirtime,
   formatClock,
   idleState,
+  REACTION_MS,
   recentlyCutOff,
+  seatReactions,
   spokenWordCount,
   stageStatus,
   timeLeftMs,
@@ -136,6 +138,27 @@ describe("airtime and turns", () => {
     // Only the speaker's latest turn matters.
     const later = turn({ speaker: "data", startMs: 31_000, endMs: 40_000 });
     assert.ok(!recentlyCutOff(live({ transcript: [cut, later], nowMs: 31_000 })).has("data"));
+  });
+
+  test("a listener reacts in character for a moment after a turn ends", () => {
+    const line = turn({ speaker: "dominator", startMs: 20_000, endMs: 30_000 });
+    const reactions = seatReactions(live({ transcript: [line], nowMs: 31_000 }));
+    assert.equal(reactions.size, 1);
+    const [[reactor, reaction]] = [...reactions];
+    assert.notEqual(reactor, "dominator", "the speaker doesn't react to themselves");
+    assert.ok(reaction.emoji);
+    assert.deepEqual(seatReactions(live({ transcript: [line], nowMs: 32_000 })).get(reactor), reaction, "stable across renders");
+    assert.equal(seatReactions(live({ transcript: [line], nowMs: 30_000 + REACTION_MS })).size, 0, "then it fades");
+  });
+
+  test("the agreer cheers the candidate; the moderator and the intro get no reactions", () => {
+    const mine = turn({ speaker: "user", startMs: 20_000, endMs: 30_000 });
+    const cheer = seatReactions(live({ transcript: [mine], nowMs: 30_500 })).get("agreer");
+    assert.ok(cheer && ["👍", "👏", "💯"].includes(cheer.emoji));
+    const moderator = turn({ speaker: "moderator", startMs: 20_000, endMs: 30_000, kind: "moderator" });
+    assert.equal(seatReactions(live({ transcript: [moderator], nowMs: 30_500 })).size, 0);
+    const intro = turn({ speaker: "data", startMs: 1_000, endMs: 5_000, phase: "intro" });
+    assert.equal(seatReactions(live({ transcript: [intro], nowMs: 5_500 })).size, 0);
   });
 });
 
