@@ -66,9 +66,25 @@ export function Stage({ state, cast, airtime, turns, hasMicMeter }: StageProps) 
       {/* Soft spotlight in the speaker's colour behind the table (decorative). */}
       <SpeakerGlow speaker={status.speaker && status.tone !== "waiting" ? seatInfo(status.speaker, cast) : null} />
 
+      {/* The table, drawn as a solid slab: a glossy top over a darker edge, casting a shadow. */}
       <div
         aria-hidden
-        className="absolute inset-x-[25%] inset-y-[27%] hidden rounded-[50%] border border-line bg-panel-2 shadow-[inset_0_2px_16px_rgb(0_0_0/0.08)] md:block"
+        className="absolute inset-x-[25%] inset-y-[27%] hidden rounded-[50%] md:block"
+        style={{
+          background: "color-mix(in srgb, var(--accent) 45%, black)",
+          transform: "translateY(10px)",
+          boxShadow: "0 26px 40px -18px rgb(0 0 0 / 0.45)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="absolute inset-x-[25%] inset-y-[27%] hidden rounded-[50%] border border-white/15 md:block"
+        style={{
+          background:
+            "radial-gradient(ellipse at 35% 25%, color-mix(in srgb, white 45%, transparent), transparent 45%)," +
+            "radial-gradient(ellipse at 50% 50%, color-mix(in srgb, var(--accent) 14%, var(--panel)), color-mix(in srgb, var(--accent-2) 20%, var(--panel-2)))",
+          boxShadow: "inset 0 -6px 18px rgb(0 0 0 / 0.12), inset 0 2px 0 rgb(255 255 255 / 0.25)",
+        }}
       />
       <TableCentre status={status} cast={cast} className="absolute inset-x-[25%] inset-y-[27%] hidden md:flex" />
       <StatusLine status={status} cast={cast} className="mb-3 md:hidden" />

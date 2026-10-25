@@ -4,7 +4,8 @@
   Design tokens. Use them through Tailwind utilities, e.g.
   bg-bg, bg-panel, bg-panel-2, border-line, text-ink, text-ink-2, text-ink-3,
   bg-accent, text-accent, text-accent-ink, bg-accent-soft, text-good, text-warn, text-bad,
-  shadow-card. Persona colours come from src/lib/personas.ts (inline style), not from here.
+  shadow-card, shadow-glow, and from-accent to-accent-2 for the brand gradient.
+  Persona colours come from src/lib/personas.ts (inline style), not from here.
 */
 :root {
   --bg: #f6f7f9;
@@ -17,10 +18,14 @@
   --accent: #4f46e5;
   --accent-ink: #ffffff;
   --accent-soft: #e8e7fd;
+  /* Second stop of the brand gradient; accent-ink stays readable on both stops. */
+  --accent-2: #9333ea;
   --good: #1f9d55;
   --warn: #c27c0e;
   --bad: #d93a3a;
   --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 8px 24px -12px rgb(16 24 40 / 0.18);
+  --glow: 0 10px 28px -10px color-mix(in srgb, var(--accent) 70%, transparent),
+    inset 0 1px 0 rgb(255 255 255 / 0.22);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -35,10 +40,13 @@
     --accent: #8b85ff;
     --accent-ink: #0c0e12;
     --accent-soft: #24224a;
+    --accent-2: #c084fc;
     --good: #3ccf7f;
     --warn: #f0b13c;
     --bad: #ff6b6b;
     --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.6);
+    --glow: 0 10px 30px -10px color-mix(in srgb, var(--accent) 60%, transparent),
+      inset 0 1px 0 rgb(255 255 255 / 0.3);
   }
 }
 
@@ -53,16 +61,20 @@
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-2: var(--accent-2);
   --color-good: var(--good);
   --color-warn: var(--warn);
   --color-bad: var(--bad);
   --shadow-card: var(--shadow);
+  --shadow-glow: var(--glow);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 html {
   color-scheme: light dark;
+  /* Keeps focused or scrolled-to content clear of the sticky header. */
+  scroll-padding-top: 4.5rem;
 }
 
 body {
@@ -113,9 +125,41 @@ body {
   animation-delay: 0.3s;
 }
 
+/* Slow drifting colour behind the app (decorative; see AuroraBackground). */
+@keyframes aurora-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(5%, -4%, 0) scale(1.08);
+  }
+  100% {
+    transform: translate3d(-4%, 5%, 0) scale(0.95);
+  }
+}
+
+.aurora-blob {
+  animation: aurora-drift 24s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+/* A gradient that slides across text: put it on a bg-clip-text element with a 3-stop gradient. */
+@keyframes shimmer {
+  to {
+    background-position: 200% center;
+  }
+}
+
+.text-shimmer {
+  background-size: 200% auto;
+  animation: shimmer 7s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .speaking-ring,
-  .thinking-dots > span {
+  .thinking-dots > span,
+  .aurora-blob,
+  .text-shimmer {
     animation: none;
   }
 }

@@ -6,6 +6,7 @@ import { castFor, USER_COLOR, type Cast, type Persona } from "@/lib/personas";
 import { PERSONA_IDS } from "@/lib/types";
 import { Card } from "@/components/ui/Card";
 import { ringStyle, tint } from "@/components/ui/style";
+import { useTilt } from "@/components/ui/tilt";
 
 /** The default cast, to spot personas renamed because the candidate shares their name. */
 const DEFAULT_CAST = castFor("");
@@ -71,10 +72,12 @@ function RoomCard({
   index: number;
   children: ReactNode;
 }) {
+  const tilt = useTilt(7);
   return (
-    <li
+    <motion.li
+      {...tilt.bind}
       className="group relative flex gap-3 overflow-hidden rounded-xl border border-line bg-panel p-3 pl-4 transition-shadow hover:shadow-card"
-      style={ringStyle(color)}
+      style={{ ...tilt.bind.style, ...ringStyle(color), background: `linear-gradient(135deg, ${tint(color, 9)}, transparent 60%), var(--panel)` }}
     >
       <span aria-hidden className="absolute inset-y-0 left-0 w-1" style={{ background: color }} />
       {/* Avatars pop in turn as the room scrolls into view (cards themselves render visible). */}
@@ -89,7 +92,8 @@ function RoomCard({
         {emoji}
       </motion.span>
       <div className="min-w-0 flex-1">{children}</div>
-    </li>
+      {tilt.glare}
+    </motion.li>
   );
 }
 

@@ -8,6 +8,7 @@ import type { Topic, TopicCategory } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { Card, Eyebrow } from "@/components/ui/Card";
 import { cn } from "@/components/ui/cn";
+import { useTilt } from "@/components/ui/tilt";
 import { useHydrated, usePrefersReducedMotion } from "@/components/ui/hooks";
 import { fieldClass } from "@/components/ui/style";
 import { MAX_CUSTOM_TOPIC_LENGTH, MIN_CUSTOM_TOPIC_LENGTH } from "./options";
@@ -353,14 +354,18 @@ function TopicCard({
   selected: boolean;
   onSelect(): void;
 }) {
+  const tilt = useTilt(5);
   return (
     <motion.label
+      {...tilt.bind}
       variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }}
       whileTap={{ scale: 0.985 }}
       className={cn(
         "relative flex cursor-pointer gap-3 rounded-xl border p-3 transition-colors duration-150",
         "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-panel",
-        selected ? "border-accent bg-accent-soft" : "border-line bg-panel hover:border-ink-3/60 hover:bg-panel-2",
+        selected
+          ? "border-accent bg-accent-soft shadow-glow"
+          : "border-line bg-panel hover:border-accent/40 hover:bg-panel-2 hover:shadow-card",
       )}
     >
       <input type="radio" name={name} value={topic.id} checked={selected} onChange={onSelect} className="sr-only" />
@@ -385,6 +390,7 @@ function TopicCard({
           {topic.hint ?? "Abstract: interpret it your own way."}
         </span>
       </span>
+      {tilt.glare}
     </motion.label>
   );
 }
