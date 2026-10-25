@@ -7,13 +7,17 @@ export type ButtonSize = "sm" | "md" | "lg";
 
 const BASE =
   "relative inline-flex select-none items-center justify-center gap-2 rounded-xl font-semibold " +
-  "transition-[background-color,border-color,color,box-shadow,transform,opacity] duration-150 " +
+  "transition-[background-color,border-color,color,box-shadow,transform,translate,scale,opacity,filter] duration-150 " +
   "outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg " +
   "active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100 " +
   "disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100";
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-accent-ink shadow-card hover:bg-accent/90",
+  // The brand gradient with a soft glow, lifting a little on hover like a physical key.
+  primary:
+    "bg-accent bg-linear-to-br from-accent to-accent-2 text-accent-ink shadow-glow " +
+    "hover:-translate-y-px hover:brightness-110 disabled:hover:translate-y-0 disabled:hover:brightness-100 " +
+    "motion-reduce:hover:translate-y-0",
   secondary: "border border-line bg-panel text-ink hover:border-ink-3/50 hover:bg-panel-2",
   ghost: "text-ink-2 hover:bg-panel-2 hover:text-ink",
 };

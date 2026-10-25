@@ -81,12 +81,18 @@ export function BadgesEarned({ earned, fresh }: { earned: readonly BadgeId[]; fr
           {earned.map((badge, index) => (
             <motion.li
               key={badge}
-              initial={{ opacity: 0, scale: 0.6, y: 10 }}
-              whileInView={{ opacity: 1, scale: 1, y: 0 }}
+              // Each badge flips over like a card being turned face up.
+              initial={{ opacity: 0, rotateY: -100, scale: 0.85 }}
+              whileInView={{ opacity: 1, rotateY: 0, scale: 1 }}
               viewport={{ once: true }}
-              transition={{ type: "spring", stiffness: 360, damping: 16, delay: 0.2 + index * 0.14 }}
-              className={cn("relative flex items-center gap-3 rounded-xl border p-3", PRINT_SETTLED)}
-              style={{ borderColor: tint(BADGE_LOOK[badge].color, 40), background: tint(BADGE_LOOK[badge].color, 7) }}
+              transition={{ type: "spring", stiffness: 220, damping: 18, delay: 0.2 + index * 0.16 }}
+              className={cn("relative flex items-center gap-3 rounded-xl border p-3 backface-hidden", PRINT_SETTLED)}
+              style={{
+                transformPerspective: 900,
+                borderColor: tint(BADGE_LOOK[badge].color, 40),
+                background: `linear-gradient(135deg, ${tint(BADGE_LOOK[badge].color, 14)}, ${tint(BADGE_LOOK[badge].color, 4)})`,
+                boxShadow: `0 10px 24px -14px ${tint(BADGE_LOOK[badge].color, 80)}`,
+              }}
             >
               <BadgeIcon id={badge} earned size="lg" />
               <div className="min-w-0">

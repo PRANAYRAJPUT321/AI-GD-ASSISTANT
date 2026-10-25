@@ -7,9 +7,13 @@ import { ApiCallError, startSession } from "@/lib/api";
 import type { ResultProgress } from "@/lib/progress";
 import type { Scorecard } from "@/lib/scoring";
 import type { GDConfig, GDRecord } from "@/lib/types";
+import { AppFooter } from "./AppFooter";
+import { InstallButton } from "./install/InstallButton";
+import { useServiceWorker } from "./install/install";
 import { PrepScreen } from "./prep/PrepScreen";
 import { recordResult } from "./progress/storage";
 import { SetupScreen, type SetupChoice } from "./setup/SetupScreen";
+import { AuroraBackground } from "./ui/AuroraBackground";
 import { cn } from "./ui/cn";
 import { ErrorBoundary } from "./ui/ErrorBoundary";
 
@@ -94,6 +98,7 @@ export function GDApp({ dailyLimit }: { dailyLimit: number | null }) {
   /** False until the first phase change: the landing screen must not steal focus or scroll. */
   const [navigated, setNavigated] = useState(false);
   const spare = useRef<SpareSession | null>(null);
+  useServiceWorker();
 
   // Leaving the page mid-prep or mid-GD loses the session: ask the browser to confirm.
   const guardUnload = phase.name === "prep" || phase.name === "room";
@@ -233,7 +238,8 @@ export function GDApp({ dailyLimit }: { dailyLimit: number | null }) {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="flex min-h-full flex-1 flex-col overflow-x-clip">
+      <div className="relative isolate flex min-h-full flex-1 flex-col overflow-x-clip">
+        <AuroraBackground />
         <AppHeader phase={phase.name} remainingToday={remainingToday} />
         <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 pb-16 pt-6 sm:px-6 sm:pt-10">
           <AnimatePresence mode="wait" initial={false}>
@@ -244,6 +250,7 @@ export function GDApp({ dailyLimit }: { dailyLimit: number | null }) {
             </PhaseFrame>
           </AnimatePresence>
         </main>
+        <AppFooter />
       </div>
     </MotionConfig>
   );
@@ -266,15 +273,17 @@ function PhaseFrame({ manageFocus, children }: { manageFocus: boolean; children:
     if (element && !element.contains(document.activeElement)) element.focus({ preventScroll: true });
   }, [manageFocus]);
 
-  // MotionConfig reducedMotion="user" drops the slide (keeps the fade) for reduced motion.
+  // Each screen swings in on a slight 3D tilt from the top edge. MotionConfig
+  // reducedMotion="user" drops the movement (keeps the fade) for reduced motion.
   return (
     <motion.div
       ref={frame}
       tabIndex={-1}
-      initial={{ opacity: 0, y: 14 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -14 }}
-      transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+      initial={{ opacity: 0, y: 16, rotateX: -7, scale: 0.985 }}
+      animate={{ opacity: 1, y: 0, rotateX: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -12, rotateX: 5, scale: 0.985 }}
+      transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+      style={{ transformPerspective: 1400, transformOrigin: "50% 0%" }}
       className="flex flex-1 flex-col outline-none"
     >
       {children}
@@ -303,7 +312,7 @@ function AppHeader({ phase, remainingToday }: { phase: PhaseName; remainingToday
   return (
     // Hidden in print: the scorecard prints on its own (the active step pill's background is
     // dropped on paper, which would leave its label invisible).
-    <header className="border-b border-line bg-panel/60 print:hidden">
+    <header className="sticky top-0 z-30 border-b border-line/70 bg-panel/70 backdrop-blur-xl print:hidden">
       <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
         <div className="flex items-center gap-2.5">
           <LogoMark />
@@ -341,6 +350,7 @@ function AppHeader({ phase, remainingToday }: { phase: PhaseName; remainingToday
         </ol>
 
         <div className="flex items-center gap-2">
+          <InstallButton compact />
           <span className="text-xs font-semibold text-ink-2 sm:hidden">
             {current + 1}/{STEPS.length} · {STEPS[current]?.label}
           </span>

@@ -44,6 +44,15 @@ Entries, airtime, pace, fillers and interruptions are measured directly from the
 
 Each scored GD is remembered in your browser (on this device only; nothing is stored on the server). The start screen shows your day streak, GDs done, best and last score and a score trend. Each GD can earn up to nine badges for things you did: Opener, Fearless (cut in), Fair share, Data-driven, Bridge builder, Held your ground, Anchor (pulled the drift back), Closer and Smooth talker. The scorecard shows the change since your last GD, new badges and a few to go for next time, with a burst of confetti for a new best or a new badge.
 
+## Install it as an app
+
+GD Arena is installable (web app manifest, icons and a small service worker that shows an offline page):
+
+- **Chrome, Edge, Android:** use the **Install** button in the header or footer, or the browser's own install icon in the address bar.
+- **iPhone and iPad (Safari):** tap **Install**, then follow the steps: Share → Add to Home Screen.
+
+Once installed it opens in its own window from your home screen or app list.
+
 ## Browser support
 
 - **Best:** Chrome or Edge on a desktop or laptop, **with headphones** so the mic doesn't pick up the AI voices.

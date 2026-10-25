@@ -158,7 +158,7 @@ export function SetupScreen({ dailyLimit, initial, onStart, busy, error }: Setup
           <MeetTheRoom cast={cast} userName={userName} />
         </div>
 
-        <aside aria-label="Session settings" className="flex flex-col gap-4 lg:sticky lg:top-6">
+        <aside aria-label="Session settings" className="flex flex-col gap-4 lg:sticky lg:top-20">
           <Card className="flex flex-col gap-5 p-4 sm:p-5">
             <SegmentedControl
               label="Discussion length"
