@@ -9,9 +9,11 @@ import {
   createVoice,
   estimateDurationMs,
   levelFromRms,
+  panelAccent,
   pickVoices,
   prosodyFor,
   requestMicPermission,
+  SENTENCE_PAUSE_MS,
   smoothLevel,
   splitSentences,
   voiceGender,
@@ -131,6 +133,21 @@ const CHROME_WINDOWS: VoiceInfo[] = [
   { name: "Google हिन्दी", lang: "hi-IN", localService: false },
 ];
 
+/** The same without its Indian voices: enough distinct English voices for every speaker. */
+const WINDOWS_NO_INDIAN = CHROME_WINDOWS.filter((voice) => !/India|हिन्दी/.test(voice.name));
+
+/** Chrome on a Mac or Linux laptop: Google's network voices, no English (India) one. */
+const CHROME_DESKTOP: VoiceInfo[] = [
+  { name: "Google US English", lang: "en-US", localService: false },
+  { name: "Google UK English Female", lang: "en-GB", localService: false },
+  { name: "Google UK English Male", lang: "en-GB", localService: false },
+  { name: "Google हिन्दी", lang: "hi-IN", localService: false },
+];
+
+const SPEAKERS = ["moderator", "dominator", "data", "agreer", "drifter", "smart"] as const;
+const FEMALE = ["moderator", "data", "smart"] as const;
+const MALE = ["dominator", "agreer", "drifter"] as const;
+
 describe("voiceGender", () => {
   test("reads gender from well-known voice names", () => {
     assert.equal(voiceGender("Google UK English Female"), "female");
@@ -144,37 +161,76 @@ describe("voiceGender", () => {
 });
 
 describe("pickVoices", () => {
-  test("prefers en-IN, then en-GB, then en-US, matching gender, a distinct voice each", () => {
+  test("uses only Indian voices when the browser has any, shared by gender", () => {
     const picks = pickVoices(CHROME_WINDOWS, cast);
     assert.equal(picks.user, null);
     // Female: moderator, data (Meera), smart (Ananya). Male: dominator, agreer, drifter.
-    assert.equal(picks.moderator, "Microsoft Heera - English (India)");
-    assert.equal(picks.data, "Google UK English Female");
-    assert.equal(picks.smart, "Google US English");
-    assert.equal(picks.dominator, "Microsoft Ravi - English (India)");
-    assert.equal(picks.agreer, "Google UK English Male");
-    assert.equal(picks.drifter, "Microsoft David - English (United States)");
-    const chosen = [picks.moderator, picks.dominator, picks.data, picks.agreer, picks.drifter, picks.smart];
-    assert.equal(new Set(chosen).size, 6);
+    for (const id of FEMALE) assert.equal(picks[id], "Microsoft Heera - English (India)");
+    for (const id of MALE) assert.equal(picks[id], "Microsoft Ravi - English (India)");
   });
 
-  test("ranks language before quality, and quality within a language", () => {
+  test("keeps an unnamed English (India) voice to itself, as on Android", () => {
+    const voices: VoiceInfo[] = [
+      { name: "English United Kingdom", lang: "en-GB" },
+      { name: "English India", lang: "en_IN" },
+      { name: "English United States", lang: "en-US" },
+    ];
+    const picks = pickVoices(voices, cast);
+    for (const id of SPEAKERS) assert.equal(picks[id], "English India");
+  });
+
+  test("without an English (India) voice, uses Chrome's Hindi voice for an Indian accent", () => {
+    const picks = pickVoices(CHROME_DESKTOP, cast);
+    for (const id of SPEAKERS) assert.equal(picks[id], "Google हिन्दी");
+    assert.deepEqual(panelAccent(CHROME_DESKTOP), { accent: "indian-hindi", voices: ["Google हिन्दी"] });
+  });
+
+  test("never uses a classic Hindi voice that may not read English", () => {
+    const voices: VoiceInfo[] = [
+      { name: "Microsoft Kalpana - Hindi (India)", lang: "hi-IN" },
+      { name: "Google UK English Female", lang: "en-GB" },
+    ];
+    const picks = pickVoices(voices, cast);
+    for (const id of SPEAKERS) assert.equal(picks[id], "Google UK English Female");
+    assert.equal(panelAccent(voices).accent, "british");
+  });
+
+  test("reports the panel's accent for the setup screen", () => {
+    assert.deepEqual(panelAccent(CHROME_WINDOWS), {
+      accent: "indian",
+      voices: ["Microsoft Heera - English (India)", "Microsoft Ravi - English (India)"],
+    });
+    assert.equal(panelAccent(WINDOWS_NO_INDIAN).accent, "british");
+    assert.equal(panelAccent([{ name: "Samantha", lang: "en-US" }]).accent, "american");
+    assert.deepEqual(panelAccent([]), { accent: null, voices: [] });
+  });
+
+  test("without Indian voices: British, then American, matching gender, a distinct voice each", () => {
+    const picks = pickVoices(WINDOWS_NO_INDIAN, cast);
+    assert.equal(picks.moderator, "Google UK English Female");
+    assert.equal(picks.data, "Google US English");
+    assert.equal(picks.smart, "Microsoft Zira - English (United States)");
+    assert.equal(picks.dominator, "Google UK English Male");
+    assert.equal(picks.agreer, "Microsoft David - English (United States)");
+    assert.equal(picks.drifter, "Microsoft Mark - English (United States)");
+    assert.equal(new Set(SPEAKERS.map((id) => picks[id])).size, 6);
+  });
+
+  test("ranks accent before quality, and quality within an accent", () => {
     const voices: VoiceInfo[] = [
       { name: "Karen", lang: "en-AU" },
       { name: "Samantha", lang: "en-US" },
       { name: "Microsoft Hazel - English (United Kingdom)", lang: "en-GB" },
       { name: "Microsoft Sonia Online (Natural) - English (United Kingdom)", lang: "en_GB" },
-      { name: "Veena", lang: "en-IN" },
     ];
     const picks = pickVoices(voices, cast);
-    assert.equal(picks.moderator, "Veena");
-    assert.equal(picks.data, "Microsoft Sonia Online (Natural) - English (United Kingdom)");
-    assert.equal(picks.smart, "Microsoft Hazel - English (United Kingdom)");
+    assert.equal(picks.moderator, "Microsoft Sonia Online (Natural) - English (United Kingdom)");
+    assert.equal(picks.data, "Microsoft Hazel - English (United Kingdom)");
+    assert.equal(picks.smart, "Samantha");
     // All voices here are female: the male personas get the leftovers (picked after the
     // female personas, though the dominator comes before Meera in assignment order).
-    assert.equal(picks.dominator, "Samantha");
-    assert.equal(picks.agreer, "Karen");
-    assert.ok(picks.drifter !== null);
+    assert.equal(picks.dominator, "Karen");
+    assert.ok(picks.agreer !== null && picks.drifter !== null);
   });
 
   test("shares a same-gender voice rather than using the other gender", () => {
@@ -190,13 +246,13 @@ describe("pickVoices", () => {
   test("gives distinct voices even when their gender is unknown", () => {
     const voices: VoiceInfo[] = [
       { name: "English United States", lang: "en-US" },
-      { name: "English India", lang: "en-IN" },
+      { name: "English Australia", lang: "en-AU" },
       { name: "English United Kingdom", lang: "en-GB" },
     ];
     const picks = pickVoices(voices, cast);
     assert.deepEqual(
       [picks.moderator, picks.dominator, picks.data],
-      ["English India", "English United Kingdom", "English United States"],
+      ["English United Kingdom", "English United States", "English Australia"],
     );
     for (const id of ["agreer", "drifter", "smart"] as const) assert.ok(picks[id] !== null);
   });
@@ -229,11 +285,25 @@ describe("pickVoices", () => {
 
 describe("prosodyFor", () => {
   test("keeps each persona's profile when every speaker has a voice of their own", () => {
-    const prosody = prosodyFor(pickVoices(CHROME_WINDOWS, cast), cast);
+    const prosody = prosodyFor(pickVoices(WINDOWS_NO_INDIAN, cast), cast);
     for (const id of ["dominator", "data", "agreer", "drifter", "smart"] as const) {
       assert.deepEqual(prosody[id], { rate: cast[id].voice.rate, pitch: cast[id].voice.pitch });
     }
     assert.deepEqual(prosody.user, { rate: 1, pitch: 1 });
+  });
+
+  test("the speed setting scales every persona's rate, keeping their differences", () => {
+    const picks = pickVoices(CHROME_WINDOWS, cast);
+    const natural = prosodyFor(picks, cast);
+    const relaxed = prosodyFor(picks, cast, "relaxed");
+    const brisk = prosodyFor(picks, cast, "brisk");
+    for (const id of SPEAKERS) {
+      assert.ok(Math.abs(relaxed[id].rate - natural[id].rate * 0.85) < 1e-9);
+      assert.ok(Math.abs(brisk[id].rate - natural[id].rate * 1.12) < 1e-9);
+      assert.equal(relaxed[id].pitch, natural[id].pitch);
+      assert.ok(natural[id].rate < 1, "every persona speaks below the engine's default rate");
+    }
+    assert.ok(natural.dominator.rate > natural.smart.rate, "the dominator still talks faster");
   });
 
   test("spreads pitches apart when speakers share a voice, male personas lower", () => {
@@ -249,7 +319,7 @@ describe("prosodyFor", () => {
   });
 
   test("raises the pitch of a female persona given a male-sounding voice", () => {
-    const picks = pickVoices(CHROME_WINDOWS, cast);
+    const picks = pickVoices(WINDOWS_NO_INDIAN, cast);
     const prosody = prosodyFor({ ...picks, data: "Microsoft Mark - English (United States)" }, cast);
     assert.ok(prosody.data.pitch > cast.data.voice.pitch);
   });
@@ -327,6 +397,7 @@ function installSynth(voices: VoiceInfo[] = CHROME_WINDOWS): FakeSynth {
 
 describe("createVoice", () => {
   test("speaks chunk by chunk with the speaker's voice and maps progress to the full line", async () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
     const synth = installSynth();
     const voice = createVoice(cast);
     assert.equal(voice.supported, true);
@@ -338,14 +409,19 @@ describe("createVoice", () => {
     assert.equal(synth.queue.length, 1, "queues one chunk at a time");
     const first = synth.queue[0];
     assert.equal(first.text, "First sentence here.");
-    assert.equal(first.voice?.name, "Google UK English Female");
+    assert.equal(first.voice?.name, "Microsoft Heera - English (India)");
+    assert.equal(first.lang, "en-IN");
+    const expected = prosodyFor(pickVoices(CHROME_WINDOWS, cast), cast).data;
     assert.equal(first.rate, cast.data.voice.rate);
-    assert.equal(first.pitch, cast.data.voice.pitch);
+    assert.equal(first.pitch, expected.pitch);
 
     first.onstart?.();
     synth.boundary(6, 8); // "sentence"
     assert.equal(handle.spokenChars(), 14);
     synth.end();
+    assert.equal(synth.queue.length, 0, "a short breath before the next sentence");
+    assert.equal(handle.spokenChars(), line.indexOf("Second"), "progress holds during the pause");
+    mock.timers.tick(SENTENCE_PAUSE_MS);
     assert.equal(synth.queue[0]?.text, "Second one follows.");
     synth.boundary(7, 3); // "one"
     assert.equal(handle.spokenChars(), line.indexOf("Second") + 10);
@@ -387,9 +463,10 @@ describe("createVoice", () => {
     mock.timers.tick(watchdogMs - 1);
     assert.deepEqual(synth.queue.map((u) => u.text), ["Hi."]);
     mock.timers.tick(1);
+    assert.equal(handle.spokenChars(), "Hi. ".length);
+    mock.timers.tick(SENTENCE_PAUSE_MS);
     // "Hi." is stuck in the fake engine; the line carries on with "Ok." regardless.
     assert.deepEqual(synth.queue.map((u) => u.text), ["Hi.", "Ok."]);
-    assert.equal(handle.spokenChars(), "Hi. ".length);
     synth.queue.shift();
     synth.end();
     assert.deepEqual(await handle.done, { completed: true, spokenChars: "Hi. Ok.".length });
@@ -403,9 +480,43 @@ describe("createVoice", () => {
     synth.fail();
     assert.equal(synth.queue.length, 0, "nothing queued until the failed chunk's time is up");
     mock.timers.tick(estimateDurationMs("Hi.", cast.data.voice.rate));
+    assert.equal(synth.queue.length, 0, "then the usual breath between sentences");
+    mock.timers.tick(SENTENCE_PAUSE_MS);
     assert.equal(synth.queue[0]?.text, "Ok.");
     synth.end();
     assert.deepEqual(await handle.done, { completed: true, spokenChars: "Hi. Ok.".length });
+  });
+
+  test("the speed setting slows every line down", () => {
+    const synth = installSynth();
+    createVoice(cast, { speed: "relaxed" }).speak("Hello there.", "data");
+    assert.ok(Math.abs(synth.queue[0].rate - cast.data.voice.rate * 0.85) < 1e-9);
+  });
+
+  test("amounts are spoken with their currency after them", () => {
+    const synth = installSynth();
+    createVoice(cast).speak("An order costs ₹500 today.", "data");
+    assert.equal(synth.queue[0].text, "An order costs 500 rupees today.");
+  });
+
+  test("a Hindi voice says numbers in English words, and the caption still follows the line", async () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    const synth = installSynth(CHROME_DESKTOP);
+    const voice = createVoice(cast);
+    const line = "About 40% of shoppers. Done.";
+    const handle = voice.speak(line, "data");
+    const first = synth.queue[0];
+    assert.equal(first.voice?.name, "Google हिन्दी");
+    assert.equal(first.lang, "hi-IN");
+    assert.equal(first.text, "About forty percent of shoppers.");
+    // Positions in the spelled-out text don't match the line, so they don't move the caption.
+    synth.boundary(30, 2);
+    assert.ok(handle.spokenChars() <= "About 40% of shoppers.".length);
+    synth.end();
+    mock.timers.tick(SENTENCE_PAUSE_MS);
+    assert.equal(synth.queue[0].text, "Done.");
+    synth.end();
+    assert.deepEqual(await handle.done, { completed: true, spokenChars: line.length });
   });
 
   test("ready() resolves when voices arrive, and the assignment follows them", async () => {

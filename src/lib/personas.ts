@@ -3,6 +3,10 @@ import type { PersonaId, SpeakerId } from "./types";
 export interface VoiceProfile {
   /** Used to pick a matching system voice when the browser exposes one. */
   gender: "female" | "male";
+  /**
+   * Speech rate at the "natural" speed setting. Kept below 1: most engines (Android's in
+   * particular) already sound hurried at 1, and a GD panel should be easy to follow.
+   */
   rate: number;
   pitch: number;
 }
@@ -34,7 +38,7 @@ const BASE: Record<PersonaId, Omit<Persona, "name"> & { names: [string, string] 
     brief:
       "Loud, confident and long-winded. Likes to hold the floor, makes sweeping claims, and pushes back hard on others, especially {user}. Talks over people when they ramble. Never abusive, just a classic GD bulldozer who wants to be seen leading.",
     words: [70, 105],
-    voice: { gender: "male", rate: 1.08, pitch: 0.85 },
+    voice: { gender: "male", rate: 0.96, pitch: 0.85 },
     color: "#e5484d",
     emoji: "🔥",
   },
@@ -46,7 +50,7 @@ const BASE: Record<PersonaId, Omit<Persona, "name"> & { names: [string, string] 
     brief:
       "Analytical and calm. Anchors every contribution in a statistic, a named company or country example, or a case study, and uses it to support or challenge the previous point. Hedges numbers ('roughly', 'around') and only cites figures that are broadly accurate; prefers a concrete example over a shaky number.",
     words: [50, 80],
-    voice: { gender: "female", rate: 1.02, pitch: 1.05 },
+    voice: { gender: "female", rate: 0.9, pitch: 1.05 },
     color: "#3e63dd",
     emoji: "📊",
   },
@@ -58,7 +62,7 @@ const BASE: Record<PersonaId, Omit<Persona, "name"> & { names: [string, string] 
     brief:
       "Wants to look involved without taking any risk. Opens by agreeing with someone by name (usually {user}, e.g. 'I agree with {user}…'), then restates their point in different words. Adds no new argument, data or example. Short and pleasant.",
     words: [22, 40],
-    voice: { gender: "male", rate: 1.0, pitch: 1.12 },
+    voice: { gender: "male", rate: 0.9, pitch: 1.12 },
     color: "#30a46c",
     emoji: "👍",
   },
@@ -70,7 +74,7 @@ const BASE: Record<PersonaId, Omit<Persona, "name"> & { names: [string, string] 
     brief:
       "Means well but drifts off-topic. Picks up a word or idea from the discussion and wanders into a loosely related tangent (a personal anecdote, a different industry, a different debate) that sounds plausible but is not the topic. Polite and enthusiastic, never acknowledges being off-topic.",
     words: [50, 80],
-    voice: { gender: "male", rate: 0.98, pitch: 1.0 },
+    voice: { gender: "male", rate: 0.88, pitch: 1.0 },
     color: "#f76b15",
     emoji: "🎈",
   },
@@ -82,7 +86,7 @@ const BASE: Record<PersonaId, Omit<Persona, "name"> & { names: [string, string] 
     brief:
       "Quiet for most of the discussion. When they finally speak it is late, concise and sharp: a framework, a fresh angle nobody has raised, or a synthesis that reframes the debate. Calm, precise, no filler.",
     words: [45, 75],
-    voice: { gender: "female", rate: 0.95, pitch: 0.98 },
+    voice: { gender: "female", rate: 0.86, pitch: 0.98 },
     color: "#8e4ec6",
     emoji: "🦉",
   },
@@ -92,7 +96,7 @@ export const MODERATOR = {
   id: "moderator" as const,
   name: "Moderator",
   role: "Moderator",
-  voice: { gender: "female", rate: 0.98, pitch: 1.0 } satisfies VoiceProfile,
+  voice: { gender: "female", rate: 0.88, pitch: 1.0 } satisfies VoiceProfile,
   color: "#6f6e77",
   emoji: "🎙️",
 };

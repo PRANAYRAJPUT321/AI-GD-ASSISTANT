@@ -14,12 +14,16 @@ export {
   createVoice,
   estimateDurationMs,
   isSpeechSynthesisSupported,
+  panelAccent,
   pickVoices,
   prosodyFor,
+  SENTENCE_PAUSE_MS,
   splitSentences,
   voiceGender,
+  VOICE_SPEED_SCALE,
 } from "./tts";
-export type { Prosody, TextChunk, VoiceInfo } from "./tts";
+export type { Accent, PanelAccent, Prosody, TextChunk, VoiceInfo, VoiceOptions } from "./tts";
+export { integerToWords, speechText } from "./spoken";
 
 export { createListener, isRecognitionSupported } from "./stt";
 

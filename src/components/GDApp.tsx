@@ -158,10 +158,10 @@ export function GDApp({ dailyLimit }: { dailyLimit: number | null }) {
     setNavigated(true);
     setPhase((current) => {
       if (current.name !== "prep") return current;
-      const { topic, userName, minutes, sttLang, inputMode } = current.choice;
+      const { topic, userName, minutes, sttLang, inputMode, voiceSpeed } = current.choice;
       return {
         name: "room",
-        config: { topic, userName, minutes, sttLang, inputMode, token: current.token, notes },
+        config: { topic, userName, minutes, sttLang, inputMode, voiceSpeed, token: current.token, notes },
       };
     });
   }

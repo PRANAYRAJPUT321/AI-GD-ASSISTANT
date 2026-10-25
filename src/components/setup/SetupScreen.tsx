@@ -6,7 +6,7 @@ import { useId, useRef, useState, type FormEvent } from "react";
 import { castFor } from "@/lib/personas";
 import { isRecognitionSupported } from "@/lib/speech/stt";
 import { isSpeechSynthesisSupported } from "@/lib/speech/tts";
-import type { InputMode, Topic } from "@/lib/types";
+import type { InputMode, Topic, VoiceSpeed } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { Card, Eyebrow } from "@/components/ui/Card";
 import { cn } from "@/components/ui/cn";
@@ -18,16 +18,19 @@ import { EnvironmentCheck } from "./EnvironmentCheck";
 import { Hero } from "./Hero";
 import { MeetTheRoom } from "./MeetTheRoom";
 import { StickyStart } from "./StickyStart";
+import { VoiceSettings } from "./VoiceSettings";
 import {
   ACCENT_OPTIONS,
   DEFAULT_ACCENT,
   DEFAULT_MINUTES,
+  DEFAULT_VOICE_SPEED,
   DURATION_OPTIONS,
   MAX_NAME_LENGTH,
   STORAGE_KEYS,
   accentLabel,
   isKnownAccent,
   isKnownDuration,
+  isKnownVoiceSpeed,
 } from "./options";
 import { TopicPicker, useTopicChoice } from "./TopicPicker";
 
@@ -37,6 +40,7 @@ export interface SetupChoice {
   minutes: number;
   sttLang: string;
   inputMode: InputMode;
+  voiceSpeed: VoiceSpeed;
 }
 
 interface SetupScreenProps {
@@ -63,13 +67,18 @@ export function SetupScreen({ dailyLimit, initial, onStart, busy, error }: Setup
   // remembered on this device (read after hydration, so server and client markup match).
   const storedName = useStoredString(STORAGE_KEYS.name);
   const storedAccent = useStoredString(STORAGE_KEYS.accent);
+  const storedVoiceSpeed = useStoredString(STORAGE_KEYS.voiceSpeed);
   const [nameDraft, setNameDraft] = useState<string | null>(initial?.userName ?? null);
   const [accentDraft, setAccentDraft] = useState<string | null>(
     isKnownAccent(initial?.sttLang) ? initial.sttLang : null,
   );
   const [minutes, setMinutes] = useState(isKnownDuration(initial?.minutes) ? initial.minutes : DEFAULT_MINUTES);
+  const [voiceSpeedDraft, setVoiceSpeedDraft] = useState<VoiceSpeed | null>(
+    isKnownVoiceSpeed(initial?.voiceSpeed) ? initial.voiceSpeed : null,
+  );
   const name = nameDraft ?? storedName ?? "";
   const sttLang = accentDraft ?? (isKnownAccent(storedAccent) ? storedAccent : DEFAULT_ACCENT);
+  const voiceSpeed = voiceSpeedDraft ?? (isKnownVoiceSpeed(storedVoiceSpeed) ? storedVoiceSpeed : DEFAULT_VOICE_SPEED);
 
   const topicChoice = useTopicChoice(initial?.topic);
   const { topic } = topicChoice;
@@ -98,6 +107,11 @@ export function SetupScreen({ dailyLimit, initial, onStart, busy, error }: Setup
     writeStored(STORAGE_KEYS.accent, value);
   }
 
+  function handleVoiceSpeedChange(value: VoiceSpeed) {
+    setVoiceSpeedDraft(value);
+    writeStored(STORAGE_KEYS.voiceSpeed, value);
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canStart || busy || !topic) return;
@@ -107,6 +121,7 @@ export function SetupScreen({ dailyLimit, initial, onStart, busy, error }: Setup
       minutes,
       sttLang,
       inputMode: recognition ? "voice" : "text",
+      voiceSpeed,
     });
   }
 
@@ -153,10 +168,10 @@ export function SetupScreen({ dailyLimit, initial, onStart, busy, error }: Setup
             />
             <div>
               <label htmlFor={`${id}-accent`} className="text-sm font-semibold text-ink">
-                Speech accent
+                Your accent
               </label>
               <p id={`${id}-accent-hint`} className="text-xs text-ink-2">
-                Helps your browser understand you.
+                So your browser understands what you say.
               </p>
               <select
                 id={`${id}-accent`}
@@ -172,6 +187,7 @@ export function SetupScreen({ dailyLimit, initial, onStart, busy, error }: Setup
                 ))}
               </select>
             </div>
+            <VoiceSettings cast={cast} speed={voiceSpeed} onSpeedChange={handleVoiceSpeedChange} />
           </Card>
 
           <EnvironmentCheck recognition={recognition} speech={speech} />

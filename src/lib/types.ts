@@ -80,6 +80,9 @@ export interface InterruptionEvent {
 
 export type InputMode = "voice" | "text";
 
+/** How fast the AI participants speak, on top of each persona's own pace. */
+export type VoiceSpeed = "relaxed" | "natural" | "brisk";
+
 export interface GDConfig {
   topic: Topic;
   userName: string;
@@ -88,6 +91,8 @@ export interface GDConfig {
   /** BCP-47 language for speech recognition, e.g. "en-IN". */
   sttLang: string;
   inputMode: InputMode;
+  /** How fast the AI participants speak (a device preference, not sent to the server). */
+  voiceSpeed: VoiceSpeed;
   /** Signed session token from POST /api/session. */
   token: string;
   /** The notes the candidate wrote during prep (never sent to the AI). */
@@ -145,7 +150,7 @@ export interface EngineState {
 
 /** The final record handed from the room to scoring. */
 export interface GDRecord {
-  config: Omit<GDConfig, "token" | "notes">;
+  config: Omit<GDConfig, "token" | "notes" | "voiceSpeed">;
   transcript: Turn[];
   interruptions: InterruptionEvent[];
   discussionStartMs: number;
