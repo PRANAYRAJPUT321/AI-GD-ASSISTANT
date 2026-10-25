@@ -3,7 +3,14 @@
 import { Flame, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { motion } from "motion/react";
 import { useId, useState, type ReactNode } from "react";
-import { BADGE_IDS, BADGES, progressStats, type BadgeId, type ProgressStats } from "@/lib/progress";
+import {
+  BADGE_IDS,
+  BADGES,
+  progressStats,
+  type BadgeId,
+  type PracticeResult,
+  type ProgressStats,
+} from "@/lib/progress";
 import { Card, Eyebrow } from "@/components/ui/Card";
 import { cn } from "@/components/ui/cn";
 import { BadgeIcon } from "./BadgeIcon";
@@ -17,13 +24,20 @@ import { useHistory } from "./storage";
  */
 export function ProgressCard() {
   const history = useHistory();
-  // The clock is read once: the card doesn't need to roll over at midnight while open.
-  const [now] = useState(() => Date.now());
-  const id = useId();
-
   if (history === null) {
     return <Card aria-hidden className="h-[13.5rem] animate-pulse bg-panel/60 motion-reduce:animate-none sm:h-40" />;
   }
+  return <ProgressCardContent history={history} />;
+}
+
+/**
+ * Only mounted in the browser (after hydration), so reading the clock here never runs during
+ * the server prerender, where Next.js doesn't allow it.
+ */
+function ProgressCardContent({ history }: { history: readonly PracticeResult[] }) {
+  // The clock is read once: the card doesn't need to roll over at midnight while open.
+  const [now] = useState(() => Date.now());
+  const id = useId();
   const stats = progressStats(history, now);
 
   return (
