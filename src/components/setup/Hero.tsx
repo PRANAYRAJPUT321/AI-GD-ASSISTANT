@@ -10,9 +10,11 @@ import {
   useSpring,
   useTransform,
 } from "motion/react";
-import { useEffect, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useState, type PointerEvent } from "react";
 import { MODERATOR, USER_COLOR, type Cast } from "@/lib/personas";
-import type { SpeakerId } from "@/lib/types";
+import { PERSONA_IDS, type PersonaId, type SpeakerId } from "@/lib/types";
+import { ArenaSlot, type ArenaReaction, type ArenaSeat } from "@/components/three/ArenaSlot";
+import { useArena3D } from "@/components/three/support";
 import { cn } from "@/components/ui/cn";
 import { usePrefersReducedMotion } from "@/components/ui/hooks";
 import { ringStyle, tint } from "@/components/ui/style";
@@ -60,7 +62,7 @@ export function Hero({ cast, userName }: { cast: Cast; userName: string }) {
             to what you actually say. Then get a scorecard and the full transcript.
           </p>
         </div>
-        <RoundTable3D cast={cast} userName={userName} />
+        <HeroArena cast={cast} userName={userName} />
       </div>
 
       <ol aria-label="How it works" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
@@ -96,6 +98,98 @@ function StepCard({ step, index }: { step: (typeof STEPS)[number]; index: number
   );
 }
 
+/** How long each participant holds the floor in the WebGL arena's endless preview. */
+const ARENA_TURN_MS = 2200;
+/** What a listener in the preview reacts with. */
+const PREVIEW_REACTIONS: Record<PersonaId, readonly string[]> = {
+  dominator: ["🙄", "✋"],
+  data: ["📈", "🤔"],
+  agreer: ["👍", "👏"],
+  drifter: ["💭", "😅"],
+  smart: ["💡", "📝"],
+};
+
+/**
+ * The preview's discussion, round and round: who speaks, who is about to, and a listener's
+ * reaction to each turn (the agreer always cheers the candidate). Still when `active` is false.
+ */
+function usePreviewDiscussion(active: boolean) {
+  const [turn, setTurn] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => setTurn((current) => current + 1), ARENA_TURN_MS);
+    return () => clearInterval(timer);
+  }, [active]);
+  const speaking = PREVIEW_SEQUENCE[turn % PREVIEW_SEQUENCE.length];
+  const preparing = PREVIEW_SEQUENCE[(turn + 1) % PREVIEW_SEQUENCE.length];
+  const reactions = new Map<SpeakerId, ArenaReaction>();
+  if (turn > 0) {
+    const listeners = PERSONA_IDS.filter((id) => id !== speaking);
+    const reactor = speaking === "user" ? "agreer" : listeners[turn % listeners.length];
+    const options = PREVIEW_REACTIONS[reactor];
+    reactions.set(reactor, { emoji: options[turn % options.length], key: String(turn) });
+  }
+  return { speaking, preparing, reactions };
+}
+
+/**
+ * The home screen's table: the WebGL arena where the browser can draw it (it fades in over
+ * the CSS 3D table, which renders first and stays as the fallback), else the CSS version.
+ */
+function HeroArena({ cast, userName }: { cast: Cast; userName: string }) {
+  const use3D = useArena3D();
+  const [failed, setFailed] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [settled, setSettled] = useState(false);
+  const live = use3D && !failed;
+  const discussion = usePreviewDiscussion(live && ready);
+  const youName = userName.trim().split(/\s+/)[0] || "You";
+
+  const seats = useMemo<ArenaSeat[]>(
+    () =>
+      SEATS.map((id) => {
+        if (id === "moderator") return { id, name: MODERATOR.name, emoji: MODERATOR.emoji, color: MODERATOR.color };
+        if (id === "user") return { id, name: youName, emoji: "🎓", color: USER_COLOR };
+        return { id, name: cast[id].name, emoji: cast[id].emoji, color: cast[id].color };
+      }),
+    [cast, youName],
+  );
+  const speaker = seats.find((seat) => seat.id === discussion.speaking);
+
+  return (
+    <div className="relative mx-auto aspect-square w-full max-w-[22rem] sm:aspect-[5/4] sm:max-w-[30rem]">
+      {!(live && settled) && (
+        <RoundTable3D
+          cast={cast}
+          userName={userName}
+          className={cn("absolute inset-0 transition-opacity duration-700", live && ready && "opacity-0")}
+        />
+      )}
+      {live && (
+        <div
+          className={cn("absolute -inset-x-4 -inset-y-2 transition-opacity duration-700", ready ? "opacity-100" : "opacity-0")}
+          onTransitionEnd={() => {
+            if (ready) setSettled(true);
+          }}
+        >
+          <ArenaSlot
+            seats={seats}
+            speaking={discussion.speaking}
+            preparing={discussion.preparing}
+            reactions={discussion.reactions}
+            caption={discussion.speaking === "user" ? "Your turn. Jump in!" : `${speaker?.name ?? ""} is speaking`}
+            captionColor={speaker?.color}
+            orbit
+            onReady={() => setReady(true)}
+            onFail={() => setFailed(true)}
+            className="size-full"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Who "speaks" in the preview, in order; it ends on the candidate. */
 const PREVIEW_SEQUENCE: readonly SpeakerId[] = ["moderator", "dominator", "data", "agreer", "drifter", "smart", "user"];
 const PREVIEW_STEP_MS = 900;
@@ -119,7 +213,7 @@ function seatPoint(index: number): { x: number; y: number } {
  * follow the pointer. The floor passes once around the room and lands on the candidate.
  * Static with reduced motion. Names follow the live cast.
  */
-function RoundTable3D({ cast, userName }: { cast: Cast; userName: string }) {
+function RoundTable3D({ cast, userName, className }: { cast: Cast; userName: string; className?: string }) {
   const reduceMotion = usePrefersReducedMotion();
   const [step, setStep] = useState(0);
 
@@ -188,7 +282,7 @@ function RoundTable3D({ cast, userName }: { cast: Cast; userName: string }) {
       aria-hidden
       onPointerMove={steer}
       onPointerLeave={release}
-      className="relative mx-auto aspect-[5/4] w-full max-w-[21rem] select-none perspective-[1000px] sm:max-w-[26rem]"
+      className={cn("relative select-none perspective-[1000px]", className)}
     >
       {/* The table plane: a square (so the table is round) centred in the wider box. */}
       <motion.div

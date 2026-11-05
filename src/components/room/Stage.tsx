@@ -1,12 +1,15 @@
 "use client";
 
-import { Scissors } from "lucide-react";
+import { Box, LayoutGrid, Scissors } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import type { Cast } from "@/lib/personas";
 import type { EngineState } from "@/lib/types";
 import { cn } from "@/components/ui/cn";
+import { useStoredString, writeStored } from "@/components/ui/hooks";
 import { ringStyle, tint } from "@/components/ui/style";
+import { ArenaSlot, type ArenaSeat } from "@/components/three/ArenaSlot";
+import { useArena3D } from "@/components/three/support";
 import { Equalizer, ThinkingDots } from "./bits";
 import {
   formatAirtime,
@@ -47,25 +50,134 @@ interface StageProps {
   hasMicMeter: boolean;
 }
 
+/** Remembers whether the candidate prefers the flat table to the 3D one. */
+const STAGE_VIEW_KEY = "gd-arena:stage-view";
+
+function seatDetail(turnCount: number | undefined, airtimeMs: number | undefined): string {
+  return turnCount ? `${turnCount} turn${turnCount === 1 ? "" : "s"} · ${formatAirtime(airtimeMs ?? 0)}` : "Yet to speak";
+}
+
 /**
- * The table: an oval with the moderator at the head and everyone else around it on tablets
- * and desktops, a compact grid on phones. The speaking seat pulses in its colour, the one
- * about to speak shows dots, a seat that was just cut off flashes a tag, and listeners react
- * to what was just said.
+ * The table. Where the browser can draw WebGL, a 3D arena: the speaker bobs and sends out sound
+ * rings, whoever is about to speak shows dots, a speaker who was cut off flashes red, and
+ * listeners react (a toggle switches to the flat table, which also shows while it loads).
+ * The flat table: an oval with the moderator at the head and everyone else around it on
+ * tablets and desktops, a compact grid on phones. Either way the seat list below stays in the
+ * page for screen readers.
  */
 export function Stage({ state, cast, airtime, turns, hasMicMeter }: StageProps) {
   const status = stageStatus(state, cast);
   const cutOff = recentlyCutOff(state);
   const reactions = seatReactions(state);
 
+  const canShow3D = useArena3D();
+  const storedView = useStoredString(STAGE_VIEW_KEY);
+  const [viewDraft, setViewDraft] = useState<"3d" | "flat" | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [ready, setReady] = useState(false);
+  const view = viewDraft ?? (storedView === "flat" ? "flat" : "3d");
+  const want3D = canShow3D && !failed && view === "3d";
+  const show3D = want3D && ready;
+
+  function toggleView() {
+    const next = view === "3d" ? "flat" : "3d";
+    setViewDraft(next);
+    setReady(false);
+    writeStored(STAGE_VIEW_KEY, next);
+  }
+
+  const speakerSeat = status.speaker ? seatInfo(status.speaker, cast) : null;
+  const userVoice = seatVoice("user", state, hasMicMeter);
+  const arenaSeats: ArenaSeat[] = SEAT_ORDER.map((id) => {
+    const info = seatInfo(id, cast);
+    return {
+      id,
+      name: info.name,
+      emoji: info.emoji,
+      color: info.color,
+      detail: id === "moderator" ? null : seatDetail(turns[id], airtime[id]),
+    };
+  });
+
   return (
     <section
       aria-label="The table"
-      className="relative overflow-hidden rounded-3xl border border-line bg-panel p-3 shadow-card sm:p-4 md:h-[27rem] md:p-0"
+      className={cn(
+        "relative overflow-hidden rounded-3xl border border-line bg-panel shadow-card md:h-[27rem]",
+        show3D ? "h-80" : "p-3 sm:p-4 md:p-0",
+      )}
     >
+      {want3D && (
+        <div
+          className={cn(
+            "absolute inset-0 transition-opacity duration-500",
+            show3D ? "opacity-100" : "pointer-events-none opacity-0",
+          )}
+        >
+          <ArenaSlot
+            seats={arenaSeats}
+            speaking={state.activeSpeaker}
+            preparing={state.preparing}
+            cutOff={cutOff}
+            reactions={reactions}
+            level={state.activeSpeaker === "user" && typeof userVoice === "number" ? userVoice : null}
+            caption={status.text}
+            captionDetail={statusDetail(status)}
+            captionColor={speakerSeat && status.tone !== "waiting" ? speakerSeat.color : undefined}
+            details
+            onReady={() => setReady(true)}
+            onFail={() => setFailed(true)}
+            className="size-full"
+          />
+        </div>
+      )}
+      {canShow3D && !failed && (
+        <button
+          type="button"
+          onClick={toggleView}
+          aria-pressed={view === "3d"}
+          className="absolute right-2 top-2 z-10 inline-flex items-center gap-1.5 rounded-full border border-line bg-panel/85 px-2.5 py-1 text-xs font-semibold text-ink-2 shadow-card backdrop-blur transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          {view === "3d" ? <LayoutGrid aria-hidden className="size-3.5" /> : <Box aria-hidden className="size-3.5" />}
+          {view === "3d" ? "Flat view" : "3D view"}
+        </button>
+      )}
+
       {/* Soft spotlight in the speaker's colour behind the table (decorative). */}
       <SpeakerGlow speaker={status.speaker && status.tone !== "waiting" ? seatInfo(status.speaker, cast) : null} />
 
+      {!show3D && (
+        <FlatTable status={status} cast={cast} />
+      )}
+
+      <ul
+        aria-label="Participants"
+        className={cn("relative grid grid-cols-3 gap-2 md:absolute md:inset-0 md:block", show3D && "sr-only")}
+      >
+        {SEAT_ORDER.map((id, index) => (
+          <Seat
+            key={id}
+            seat={seatInfo(id, cast)}
+            style={SEAT_POSITIONS[index]}
+            speaking={state.activeSpeaker === id}
+            preparing={state.preparing === id}
+            cutOff={cutOff.has(id)}
+            reaction={reactions.get(id) ?? null}
+            turns={id === "moderator" ? null : turns[id]}
+            airtimeMs={id === "moderator" ? null : airtime[id]}
+            voice={seatVoice(id, state, hasMicMeter)}
+            interjecting={state.floor === "user" && state.activeSpeaker === id && id !== "user"}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** The flat table's oval, its centre line, and the phone's status line above the seat grid. */
+function FlatTable({ status, cast }: { status: StageStatus; cast: Cast }) {
+  return (
+    <>
       {/* The table, drawn as a solid slab: a glossy top over a darker edge, casting a shadow. */}
       <div
         aria-hidden
@@ -88,25 +200,7 @@ export function Stage({ state, cast, airtime, turns, hasMicMeter }: StageProps) 
       />
       <TableCentre status={status} cast={cast} className="absolute inset-x-[25%] inset-y-[27%] hidden md:flex" />
       <StatusLine status={status} cast={cast} className="mb-3 md:hidden" />
-
-      <ul aria-label="Participants" className="relative grid grid-cols-3 gap-2 md:absolute md:inset-0 md:block">
-        {SEAT_ORDER.map((id, index) => (
-          <Seat
-            key={id}
-            seat={seatInfo(id, cast)}
-            style={SEAT_POSITIONS[index]}
-            speaking={state.activeSpeaker === id}
-            preparing={state.preparing === id}
-            cutOff={cutOff.has(id)}
-            reaction={reactions.get(id) ?? null}
-            turns={id === "moderator" ? null : turns[id]}
-            airtimeMs={id === "moderator" ? null : airtime[id]}
-            voice={seatVoice(id, state, hasMicMeter)}
-            interjecting={state.floor === "user" && state.activeSpeaker === id && id !== "user"}
-          />
-        ))}
-      </ul>
-    </section>
+    </>
   );
 }
 
