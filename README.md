@@ -132,6 +132,7 @@ The default is **limited**: 3 GDs per device per day, 30 per IP per day, and no 
 - **API routes** (`src/app/api/`): `session` (daily limits + signed session token), `turn` (one participant line from Claude), and `score` (metrics + Claude's structured assessment).
 - **Metrics** (`src/lib/metrics.ts`): deterministic numbers (entries, airtime, pace, fillers, interruptions) computed from the transcript.
 - **Progress** (`src/lib/progress.ts`): badges, streaks and score trends from the practice history kept in `localStorage`.
+- **3D arena** (`src/components/three/`): a WebGL round table (three.js with React Three Fiber) on the start screen and in the room. Figures for each participant bob and send out sound rings when they speak, show thinking dots before they speak, flash red when cut off and float reactions. It loads on demand, only where WebGL works and motion isn't reduced; otherwise (or with the room's *Flat view* toggle) the 2D table shows. The seat list stays in the page for screen readers either way.
 
 The full design spec is in [`docs/DESIGN.md`](docs/DESIGN.md).
 
